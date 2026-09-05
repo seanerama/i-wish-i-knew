@@ -28,8 +28,30 @@ jobs:
   # .verity/run-gates.cjs by the scaffold.
   gates:
     runs-on: ubuntu-latest
+    # Stack per ADR-0001: Node 22 + PostgreSQL. The spine test (docs/walking-skeleton.md)
+    # needs a real database, so CI provides the same thing `docker compose up -d db`
+    # provides locally — the gate commands themselves are identical in both places.
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: iwik
+          POSTGRES_PASSWORD: iwik
+          POSTGRES_DB: iwik_test
+        ports: ['5432:5432']
+        options: >-
+          --health-cmd "pg_isready -U iwik"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      DATABASE_URL: postgres://iwik:iwik@localhost:5432/iwik_test
+      IWIK_KEK: ci-only-not-a-secret-0000000000000000
     steps:
       - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
       - name: Run the committed gate definition (.verity/gates.json)
         run: node .verity/run-gates.cjs
   structure:

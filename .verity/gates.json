@@ -1,0 +1,11 @@
+{
+  "schema": 1,
+  "gates": [
+    { "name": "install", "command": "npm ci" },
+    { "name": "contracts-frozen", "command": "npm run contracts:check" },
+    { "name": "typecheck", "command": "npm run typecheck" },
+    { "name": "lint", "command": "npm run lint" },
+    { "name": "test", "command": "npm test" },
+    { "name": "image", "command": "docker build -t i-wish-i-knew:ci ." }
+  ]
+}
