@@ -47,6 +47,12 @@ operator must run). Error messages never include private field values.
 read applicability and uncertainty, and when to propose a test. The skill is
 guidance; enforcement is in the tools.
 
+## Added tool (additive, recorded 2026-09-06 from stage 10)
+
+| Tool | Scope | Side effect | Maps to |
+|---|---|---|---|
+| `register_prediction` | `publish` | remote write | `POST /v1/outcomes` step 1: registers a prediction before its outcome is known; `report_outcome` then references the returned `prediction_id` |
+
 ## Versioning
 
 Frozen at **v1**. Changes are **additive only** — a breaking change is a NEW

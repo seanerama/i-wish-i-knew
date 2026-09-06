@@ -126,6 +126,13 @@ member surfaces behind `IWIK_FEATURE_ENROLLMENT` and are not part of the JSON AP
 - `POST /v1/evidence/query` behind `IWIK_FEATURE_COOPERATIVE_QUERY` (off → the stage 5 stub). `as_of_revision` above the current revision → `422` with path `/as_of_revision` and rule `maximum`. A cohort above `IWIK_QUERY_COHORT_CAP` (default 500 runs) is suppressed with `cohort_too_large` before any body is decrypted.
 - Console `GET /receipts/<id>` renders a receipt for the signed-in organization only; other organizations' receipts are `404`.
 
+## Challenge and outcome wire details (additive, recorded 2026-09-06 from stage 10)
+
+- `POST /v1/challenges` body `{ target: { kind: "receipt"|"claim", id }, grounds, statement?, note? }` (note ≤ 500 chars, secret-rescanned, never shown to other members); target must be the caller's receipt or a claim from it, otherwise `404`; 5 per organization per rolling 24 h, then `429` with `Retry-After`. `GET /v1/challenges/{id}` is filer-only.
+- `POST /v1/admin/challenges/{id}/resolve` (operator) body `{ resolution: "upheld"|"rejected"|"superseded", relationship: { kind, rationale } }`; `409` if already resolved; bumps the evidence revision (`revision_log` kind `challenge`) so prior query receipts read `stale`.
+- `POST /v1/outcomes` two-step: `{ prediction }` → `{ prediction_id }`; later `{ prediction_id, observed }`. Errors: `409 prediction_immutable`, `409 target_mismatch`, `409 outcome_exists`.
+- Console `/admin/login` and `/admin/challenges` (operator token, separate signed cookie, 1 h TTL). All of the above are `404 feature_disabled` while `IWIK_FEATURE_CHALLENGE` is off.
+
 ## Versioning
 
 Frozen at **v1**. Changes are **additive only** — a breaking change is a NEW

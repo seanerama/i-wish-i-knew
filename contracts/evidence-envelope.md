@@ -135,6 +135,23 @@ reproduces the release recorded at that revision, `limitations` carries the fixe
 entry "Pinned cohort no longer reproducible: contributions changed since the
 pinned revision." and nothing about what changed.
 
+## Ledger entities (additive, recorded 2026-09-06 from stage 10)
+
+`Challenge`, `Outcome`, `Claim`, and `Relationship` were minimal identifier-only
+stubs until stage 10 completed them; because no producer or fixture ever emitted
+the stub shape, their new members are required (a sanctioned exception to the
+"new fields are optional" rule, recorded here). A `Prediction` entity was added:
+`Outcome` now references a `prediction_id` whose `prediction` (target, horizon,
+optional probability, evaluation rule, `based_on_receipt_id`, `registered_at`) is
+immutable once registered; `observed` carries `result` (`met|not_met|indeterminate`)
+and `environment_changed` as separate fields. `Challenge.grounds` is
+`method|context_mismatch|data_error|replication_failed|affiliation`; `Claim.status`
+follows the brief's hypothesis states; `Relationship.kind` is
+`supports|contradicts|reproduces|narrows|supersedes`. A released `ReceiptFinding`
+carries a per-receipt `claim_id` (fresh per receipt, never shared across
+organizations). Resolution mapping: upheld → `contradicts`, rejected → `narrows`
+(claim untouched), superseded → `supersedes` (claim `rejected`).
+
 ## Versioning
 
 Frozen at **v1**. Changes are **additive only** — a breaking change is a NEW
