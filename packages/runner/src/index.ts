@@ -25,6 +25,8 @@ export {
 export type { ReportOptions, LocalReport, ReportRun, ReportClaim, ReportMetric } from './report.js';
 export { preview, submit, receipt, wireRun } from './submit.js';
 export type { ClientOptions, PreviewOptions, PreviewResult, SubmitResult } from './submit.js';
+export { withdraw, WITHDRAWAL_REASON_CODES, isWithdrawalReasonCode } from './withdraw.js';
+export type { WithdrawOptions, WithdrawResult, WithdrawalReasonCode } from './withdraw.js';
 export {
   init,
   discoverNode,

@@ -51,6 +51,7 @@ import {
 } from '../identity/index.js';
 import type { InviteKind, InviteRow, Scope } from '../identity/index.js';
 import { PASSWORD_MAX_LENGTH, PASSWORD_MIN_LENGTH, hashPassword } from '../identity/password.js';
+import { REASON_CODES, listOwnRuns, orgRefOf } from '../withdrawal/index.js';
 
 /** Bump when the wording of any clause below changes; agreements record it. */
 export const PILOT_TERMS_VERSION = '2026-09-pilot-1';
@@ -380,12 +381,22 @@ export function registerEnrollmentRoutes(app: FastifyInstance, deps: EnrollmentD
     extras: OrgPageExtras = {},
   ) {
     const nodes = await listNodes(pool, session.org_id);
+    const orgRef = await orgRefOf(pool, session.org_id);
+    const runs = orgRef === undefined ? [] : await listOwnRuns(pool, orgRef);
     return reply.view('org', {
       product: PRODUCT_NAME,
       org_name: session.org_name,
       csrf: csrfToken(request, reply, config),
       scopes: ALL_SCOPES,
       service_url: config.publicUrl ?? '<service origin>',
+      // Stage 7: own runs and the withdraw form (hidden while the flag is off).
+      withdrawal_enabled: config.featureWithdrawal,
+      reason_codes: REASON_CODES,
+      runs: runs.map((r) => ({
+        ...r,
+        received_at: r.received_at.toISOString(),
+        withdrawn_at: r.withdrawn_at?.toISOString() ?? null,
+      })),
       nodes: nodes.map((n) => ({
         ...n,
         created_at: n.created_at.toISOString(),
@@ -409,8 +420,19 @@ export function registerEnrollmentRoutes(app: FastifyInstance, deps: EnrollmentD
     'node_revoked',
     'token_revoked',
     'nothing_to_revoke',
+    'withdrawn',
+    'already_withdrawn',
   ]);
-  const ERRORS = new Set(['pubkey', 'pubkey_exists', 'scopes', 'node_unknown', 'node_revoked']);
+  const ERRORS = new Set([
+    'pubkey',
+    'pubkey_exists',
+    'scopes',
+    'node_unknown',
+    'node_revoked',
+    'withdraw_runs',
+    'withdraw_reason',
+    'withdraw_confirm',
+  ]);
 
   app.get<{ Querystring: { notice?: string; error?: string } }>(
     '/org',

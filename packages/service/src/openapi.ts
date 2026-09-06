@@ -70,6 +70,30 @@ const QUERY_REQUEST = {
   },
 };
 
+const WITHDRAWAL_REQUEST = {
+  type: 'object',
+  required: ['run_ids', 'reason_code'],
+  additionalProperties: false,
+  properties: {
+    run_ids: {
+      type: 'array',
+      minItems: 1,
+      maxItems: 100,
+      items: { type: 'string', pattern: '^[0-9A-HJKMNP-TV-Z]{26}$' },
+    },
+    reason_code: { type: 'string', enum: ['member_request', 'data_error', 'policy_change'] },
+  },
+};
+
+const WITHDRAWAL = {
+  type: 'object',
+  required: ['withdrawal_id', 'effective_revision'],
+  properties: {
+    withdrawal_id: { type: 'string' },
+    effective_revision: { type: 'integer', minimum: 0 },
+  },
+};
+
 const WHOAMI = {
   type: 'object',
   required: ['node_id', 'org_display_name', 'scopes'],
@@ -130,6 +154,8 @@ export function buildOpenApi(): Record<string, unknown> {
         QueryReceipt: QUERY_RECEIPT,
         QueryRequest: QUERY_REQUEST,
         WhoAmI: WHOAMI,
+        WithdrawalRequest: WITHDRAWAL_REQUEST,
+        Withdrawal: WITHDRAWAL,
       },
     },
     paths: {
@@ -268,8 +294,53 @@ export function buildOpenApi(): Record<string, unknown> {
           'x-scope': 'query',
           parameters: [{ name: 'run_id', in: 'path', required: true, schema: { type: 'string' } }],
           responses: {
-            '200': { description: '{ run, receipt_id, evidence_revision, received_at }' },
+            '200': {
+              description:
+                '{ run, receipt_id, evidence_revision, received_at, withdrawn_at?, withdrawn_revision? } (the last two, stage 7 additive, only once withdrawn)',
+            },
             ...errorResponses([401, 'unauthorized'], [403, 'scope_required'], [404, 'not_found']),
+          },
+        },
+      },
+      '/v1/withdrawals': {
+        post: {
+          summary:
+            'Withdraw own runs (stage 7); effective at the next evidence revision, idempotent on the set of run ids',
+          description:
+            'Requires IWIK_FEATURE_WITHDRAWAL=on (404 feature_disabled otherwise, before authentication). ' +
+            'Every run id must belong to the caller’s organization: any foreign or unknown id makes the whole ' +
+            'request 404 not_found and nothing is withdrawn; the response never says which id. The same set ' +
+            '(any order) returns the original withdrawal with 200. Query receipts issued for an affected protocol ' +
+            'before the effective revision read status stale on GET /v1/receipts/{id}.',
+          security: bearer,
+          'x-scope': 'publish',
+          requestBody: {
+            required: true,
+            content: {
+              'application/json': {
+                schema: { $ref: '#/components/schemas/WithdrawalRequest' },
+              },
+            },
+          },
+          responses: {
+            '201': {
+              description: 'withdrawal recorded',
+              content: {
+                'application/json': { schema: { $ref: '#/components/schemas/Withdrawal' } },
+              },
+            },
+            '200': {
+              description: 'the same set was already withdrawn: the original withdrawal',
+              content: {
+                'application/json': { schema: { $ref: '#/components/schemas/Withdrawal' } },
+              },
+            },
+            ...errorResponses(
+              [401, 'unauthorized or node_revoked'],
+              [403, 'scope_required'],
+              [404, 'not_found (a run id is not yours) or feature_disabled'],
+              [422, 'validation_failed'],
+            ),
           },
         },
       },
@@ -331,7 +402,8 @@ export function buildOpenApi(): Record<string, unknown> {
       },
       '/v1/receipts/{id}': {
         get: {
-          summary: 'Re-read one of your organization’s receipts (intake or query)',
+          summary:
+            'Re-read one of your organization’s receipts (intake or query); a query receipt reads status stale once a later evidence revision touched its protocol (stage 7)',
           security: bearer,
           'x-scope': 'query',
           parameters: [{ name: 'id', in: 'path', required: true, schema: { type: 'string' } }],

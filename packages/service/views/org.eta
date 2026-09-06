@@ -9,7 +9,7 @@
   <body>
     <header>
       <h1><%= it.product %></h1>
-      <p class="tagline">Nodes and tokens for <strong id="org-name"><%= it.org_name %></strong>.</p>
+      <p class="tagline">Nodes, tokens, and runs for <strong id="org-name"><%= it.org_name %></strong>.</p>
     </header>
 
     <% if (it.notice) { %>
@@ -20,6 +20,8 @@
         <% if (it.notice === 'node_revoked') { %>Node revoked. Every token issued to it now answers 401.<% } %>
         <% if (it.notice === 'token_revoked') { %>Token revoked.<% } %>
         <% if (it.notice === 'nothing_to_revoke') { %>Nothing to revoke: not yours, or already revoked.<% } %>
+        <% if (it.notice === 'withdrawn') { %>Withdrawal recorded. The runs are excluded from every cohort computed at the new evidence revision; receipts issued earlier now read <code>stale</code>. Answers already delivered cannot be recalled.<% } %>
+        <% if (it.notice === 'already_withdrawn') { %>That exact set of runs was already withdrawn; nothing changed.<% } %>
       </p>
     <% } %>
     <% if (it.error) { %>
@@ -29,6 +31,9 @@
         <% if (it.error === 'scopes') { %>Choose at least one scope.<% } %>
         <% if (it.error === 'node_unknown') { %>That node is not one of yours.<% } %>
         <% if (it.error === 'node_revoked') { %>That node is revoked; tokens cannot be issued to it.<% } %>
+        <% if (it.error === 'withdraw_runs') { %>Choose at least one of your own runs to withdraw (at most 100 at a time).<% } %>
+        <% if (it.error === 'withdraw_reason') { %>Choose a withdrawal reason.<% } %>
+        <% if (it.error === 'withdraw_confirm') { %>Tick the confirmation box to withdraw: a withdrawal cannot be undone and already delivered answers cannot be recalled.<% } %>
       </p>
     <% } %>
 
@@ -126,6 +131,51 @@ iwik init --service <%= it.service_url %></pre>
           </table>
         </article>
       <% }) %>
+    </section>
+
+    <section aria-labelledby="runs-heading">
+      <h2 id="runs-heading">Runs</h2>
+      <p class="muted">The runs this organization has contributed (newest first, up to 200). Withdrawing a run excludes it from every cohort computed at the next evidence revision; receipts issued against an earlier revision read <code>stale</code> without saying what changed. Answers already delivered cannot be recalled (ADR-0002).</p>
+      <% if (it.runs.length === 0) { %>
+        <p class="muted" id="no-runs">No runs contributed yet.</p>
+      <% } else { %>
+        <% if (it.withdrawal_enabled) { %>
+        <form method="post" action="/org/withdrawals" id="withdraw-form">
+          <input type="hidden" name="_csrf" value="<%= it.csrf %>" />
+        <% } %>
+          <table id="runs">
+            <thead><tr><% if (it.withdrawal_enabled) { %><th></th><% } %><th>Run id</th><th>Protocol</th><th>Status</th><th>Sharing</th><th>Received</th><th>Withdrawn</th></tr></thead>
+            <tbody>
+              <% it.runs.forEach(function (run) { %>
+                <tr id="run-<%= run.run_id %>" class="<%= run.withdrawn_at ? 'withdrawn' : 'active' %>">
+                  <% if (it.withdrawal_enabled) { %>
+                    <td><% if (!run.withdrawn_at) { %><input type="checkbox" name="run_ids" value="<%= run.run_id %>" aria-label="withdraw run <%= run.run_id %>" /><% } %></td>
+                  <% } %>
+                  <td class="mono"><%= run.run_id %></td>
+                  <td><%= run.protocol_ref %></td>
+                  <td><%= run.execution_status %></td>
+                  <td><%= run.sharing_policy === null ? '(pending backfill)' : run.sharing_policy %></td>
+                  <td><%= run.received_at %> (revision <%= run.evidence_revision %>)</td>
+                  <td><% if (run.withdrawn_at) { %><span class="revoked">withdrawn <%= run.withdrawn_at %> (revision <%= run.withdrawn_revision %>)</span><% } else { %>no<% } %></td>
+                </tr>
+              <% }) %>
+            </tbody>
+          </table>
+        <% if (it.withdrawal_enabled) { %>
+          <label for="reason_code">Reason</label>
+          <select id="reason_code" name="reason_code" required>
+            <option value="">choose a reason</option>
+            <% it.reason_codes.forEach(function (code) { %>
+              <option value="<%= code %>"><%= code %></option>
+            <% }) %>
+          </select>
+          <label style="display:block; margin-top: 0.5rem;"><input type="checkbox" name="confirm" id="withdraw-confirm" /> I understand that withdrawal cannot be undone and that answers already delivered cannot be recalled.</label>
+          <button type="submit" class="danger" id="withdraw-submit">Withdraw selected runs</button>
+        </form>
+        <% } else { %>
+          <p class="muted" id="withdrawal-disabled">Withdrawal is disabled on this deployment (IWIK_FEATURE_WITHDRAWAL=off).</p>
+        <% } %>
+      <% } %>
     </section>
 
     <form method="post" action="/console/logout">

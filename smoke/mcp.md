@@ -73,8 +73,11 @@ Use a throwaway home so the check never touches a real vault:
       has `kind` and `label_digest` only; `submit_run` `ok: true` with
       `status: 201`; `get_receipt` returning the same receipt.
 12. Ask: "Withdraw that contribution."
-    - Expect `ok: false`, `code: not_yet_available`, and a `next_step` naming
-      milestone 0.3. Nothing is sent.
+    - With `IWIK_FEATURE_WITHDRAWAL` unset on the deployment (the default),
+      expect `ok: false`, `code: feature_disabled`, and a `next_step` naming
+      `IWIK_FEATURE_WITHDRAWAL`; nothing is withdrawn. With the flag on,
+      expect the agent to confirm first, then `ok: true` with a
+      `withdrawal_id` and `effective_revision` (`smoke/withdrawal.md`).
 13. Cleanup: `claude mcp remove iwik`, stop the stub (Ctrl-C), `rm -rf $IWIK_HOME`.
 
 ## Pass criteria

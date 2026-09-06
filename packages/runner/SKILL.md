@@ -71,8 +71,16 @@ when freshness matters more than the cohort's age. The path is always:
    sharing policy), and only then `submit_run`. Fixture (stub) runs are stored
    private and never join a cohort. `get_receipt` re-reads the intake receipt.
 
-`challenge_finding`, `report_outcome`, and `withdraw_contribution` answer
-`not_yet_available` until milestone 0.3; do not promise them.
+`withdraw_contribution` withdraws runs this organization contributed
+(`run_ids`, and a `reason_code` of `member_request`, `data_error`, or
+`policy_change`). It cannot be undone and answers already delivered cannot be
+recalled, so confirm with the user first and pass only ids from `iwik vault`
+or earlier `submit_run` calls. Its effect is at the next evidence revision;
+receipts issued earlier read `stale`. When the deployment has it switched off
+the tool answers `feature_disabled`; say so and stop.
+
+`challenge_finding` and `report_outcome` answer `not_yet_available` until
+milestone 0.3 stage 10; do not promise them.
 
 ## How to explain a suppressed or insufficient answer
 

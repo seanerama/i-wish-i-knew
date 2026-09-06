@@ -36,6 +36,10 @@
               "pattern": "^[0-9A-HJKMNP-TV-Z]{26}$",
               "description": "ULID identifier",
               "type": "string"
+            },
+            "effective_revision": {
+              "minimum": 0,
+              "type": "integer"
             }
           }
         }
