@@ -101,6 +101,12 @@ Operator scope is distinct from node scopes and never grants evidence access.
 Console routes (`/enroll/<invite>`, `/org`, `/console/login`) are server-rendered
 member surfaces behind `IWIK_FEATURE_ENROLLMENT` and are not part of the JSON API.
 
+## Node identity endpoint (additive, recorded 2026-09-06 after the stage 3 review)
+
+| Method and path | Scope | Purpose |
+|---|---|---|
+| `GET /v1/whoami` | any valid node token | returns `{ "node_id": "<ulid>", "org_display_name": "<string>", "scopes": ["query", …] }` so a runner can learn its own node id without operator input; never returns `org_ref` |
+
 ## Versioning
 
 Frozen at **v1**. Changes are **additive only** — a breaking change is a NEW
