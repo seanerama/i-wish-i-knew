@@ -73,6 +73,28 @@ function homeOf(): string {
   return resolveHome(opts.home);
 }
 
+/**
+ * Enrollment instructions, worded like the console's /org page ("Enroll a
+ * node", packages/service/views/org.eta) so the two stay consistent. Only the
+ * public key is ever shown; the token and private key are never printed.
+ */
+export function enrollmentInstructions(serviceUrl: string, home: string): string[] {
+  return [
+    '',
+    `Enroll this node: sign in to the console at ${serviceUrl}/org, then`,
+    '  1. Paste the public key above under "Register a node" and register the node. Accepted',
+    '     formats (both are what iwik init may print): base64 raw key: one line of 44 characters,',
+    '     the 32 raw bytes of the Ed25519 public key (no PEM header lines), or PEM SPKI block:',
+    '     -----BEGIN PUBLIC KEY----- ... -----END PUBLIC KEY-----. Either form is stored',
+    '     canonically as the base64 raw key.',
+    '  2. Issue the node a token with only the scopes it needs (query reads, submit previews and',
+    '     submits runs, publish challenges, outcomes, withdrawals). Save the token to',
+    `     ${home}/token (0600): iwik init --service ${serviceUrl} --token-file <path> --node-id <node id>.`,
+    '  3. Lost or leaked? Revoke the token, or revoke the whole node: every request with a revoked',
+    '     token answers 401, and intake rejects signatures from a revoked node.',
+  ];
+}
+
 program
   .command('init')
   .description('create the runner home, generate the Ed25519 signing key, store the node token')
@@ -96,6 +118,7 @@ program
       err(`signing key: ${result.key_created ? 'generated' : 'kept'} (key_id ${result.key_id})`);
       err('public key for enrollment (base64, raw Ed25519):');
       out(result.pubkey);
+      for (const line of enrollmentInstructions(result.service_url, result.home)) err(line);
     } catch (e) {
       fail(e);
     }

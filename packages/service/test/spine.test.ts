@@ -32,11 +32,14 @@ import {
   assertNoEcho,
   authHeader,
   bootApp,
+  browse,
+  CookieJar,
   generateNodeKey,
   prepareRun,
   preview,
   repoRoot,
   SEED_NODE_ID,
+  postForm,
   SEED_NODE_TOKEN,
   signRun,
   submit,
@@ -467,20 +470,13 @@ test('walking skeleton: stub -> iwik run -> vault -> preview -> submit 201 -> 20
     return true;
   });
 
-  // the console shows one more accepted run for the organization
-  const login = await t.app.inject({
-    method: 'POST',
-    url: '/console/session',
-    payload: `token=${encodeURIComponent(t.token)}`,
-    headers: { 'content-type': 'application/x-www-form-urlencoded' },
-  });
-  const cookieValue =
-    String(login.headers['set-cookie']).split(';')[0]?.split('=').slice(1).join('=') ?? '';
-  const page = await t.app.inject({
-    method: 'GET',
-    url: '/',
-    headers: { cookie: `iwik_session=${cookieValue}` },
-  });
+  // the console shows one more accepted run for the organization (stage-2
+  // node-token sign-in: CSRF cookie + field, signed session cookie)
+  const jar = new CookieJar();
+  const login = await postForm(t, jar, '/console/session', { token: t.token });
+  assert.equal(login.statusCode, 303, login.body);
+  const page = await browse(t, jar, '/');
+  assert.equal(page.statusCode, 200);
   assert.match(page.body, new RegExp(`id="evidence-revision">${revisionBefore + 1}<`));
   assert.ok(page.body.includes(`id="last-receipt-id">${String(first.receipt['receipt_id'])}<`));
 });

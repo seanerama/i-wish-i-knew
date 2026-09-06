@@ -49,9 +49,12 @@ iwik vault
 ```
 
 - `init` prints the node's public key (base64 of the raw 32 bytes, the form
-  enrollment and the service's `IWIK_SEED_NODE_PUBKEY` accept) on stdout and
-  nothing secret anywhere. Re-running it keeps the key, the token, and the
-  policy and merges the config.
+  enrollment and the service's `IWIK_SEED_NODE_PUBKEY` accept) on stdout,
+  followed on stderr by the enrollment instructions of the console's `/org`
+  page (register the node with that key, either as the base64 raw key or as a
+  PEM SPKI block; issue a scoped token; revoke when lost), and nothing secret
+  anywhere. Re-running it keeps the key, the token, and the policy and merges
+  the config.
 - `run` prints the `run_id` on stdout and a one-line summary on stderr.
 - `preview` prints the sanitization report and the exact body `submit` will
   send. `submit` prints the receipt. `receipt` prints a receipt.

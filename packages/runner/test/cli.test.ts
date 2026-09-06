@@ -44,6 +44,22 @@ test('init: prints the enrollment public key, never the token or private key; id
     assert.ok(!first.all.includes(line), 'private key material must not be printed');
   }
   assert.equal(readFileSync(join(home, 'token'), 'utf8'), TEST_TOKEN + '\n');
+  // enrollment instructions point at the console's /org page (same wording as org.eta)
+  const text = first.stderr.replace(/\s+/g, ' ');
+  assert.match(
+    text,
+    /Enroll this node: sign in to the console at http:\/\/127\.0\.0\.1:1\/org, then/,
+  );
+  assert.match(text, /Paste the public key above under "Register a node" and register the node/);
+  assert.match(text, /base64 raw key: one line of 44 characters, the 32 raw bytes/);
+  assert.match(text, /PEM SPKI block: -----BEGIN PUBLIC KEY----- \.\.\. -----END PUBLIC KEY-----/);
+  assert.match(text, /Either form is stored canonically as the base64 raw key/);
+  assert.match(text, /query reads, submit previews and submits runs, publish challenges/);
+  assert.match(text, /Revoke the token, or revoke the whole node/);
+  // the only key material anywhere in the output is the public key itself
+  const base64ish = first.all.match(/[A-Za-z0-9+/]{40,}={0,2}/g) ?? [];
+  assert.ok(base64ish.length >= 1);
+  for (const blob of base64ish) assert.equal(blob, pubkey);
   assert.equal(
     JSON.parse(readFileSync(join(home, 'config.json'), 'utf8')).service_url,
     'http://127.0.0.1:1',

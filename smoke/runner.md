@@ -21,7 +21,11 @@ Use a throwaway home so the check never touches a real vault:
    - Expect one line `{"port":8089,"host":"127.0.0.1"}`.
 2. `iwik init --service <base url> --token-file <file holding the node token> --node-id <node id>`.
    - Expect stdout to be exactly one base64 line (the public key) and stderr to
-     list the home, service, node id, `token: stored`, and `signing key: generated`.
+     list the home, service, node id, `token: stored`, `signing key: generated`,
+     followed by the enrollment instructions `Enroll this node: sign in to the
+     console at <base url>/org, then` with the same three steps the console's
+     `/org` page shows (register the node with the base64 raw or PEM SPKI key,
+     issue a scoped token, revoke when lost).
    - Expect the token value and `PRIVATE KEY` to appear nowhere in the output.
    - `ls -la $IWIK_HOME` shows `drwx------` for the home and `-rw-------` for
      `config.json`, `token`, `key.ed25519`, `policy.json`.
