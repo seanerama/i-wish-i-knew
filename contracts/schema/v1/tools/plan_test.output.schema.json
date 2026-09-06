@@ -166,6 +166,11 @@
               "description": "ULID identifier",
               "type": "string"
             },
+            "api_key_env": {
+              "minLength": 1,
+              "description": "NAME of the environment variable holding the target API key; never the key",
+              "type": "string"
+            },
             "estimated_cost": {
               "additionalProperties": false,
               "type": "object",

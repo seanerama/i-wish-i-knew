@@ -97,6 +97,11 @@
         "private",
         "cooperative"
       ]
+    },
+    "api_key_env": {
+      "minLength": 1,
+      "description": "NAME of the environment variable on the node that holds the target API key; the key itself never passes through a tool",
+      "type": "string"
     }
   },
   "description": "Plan a local test: choose protocol, target, and context; saves the plan locally and returns its id, estimated cost, and what uncertainty it resolves. Never executes. Scope: query; side effect: local_write."

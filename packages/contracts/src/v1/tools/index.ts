@@ -118,6 +118,12 @@ export const PlanSummary = Type.Object(
     timeout_ms: Type.Integer({ minimum: 1 }),
     sharing_policy: SharingPolicy,
     investigation_id: Type.Optional(Ulid),
+    api_key_env: Type.Optional(
+      Type.String({
+        minLength: 1,
+        description: 'NAME of the environment variable holding the target API key; never the key',
+      }),
+    ),
     estimated_cost: EstimatedCost,
     resolves: Type.Object(
       { claims: Type.Array(Type.String()), statement: Type.String() },
@@ -192,6 +198,13 @@ export const tools = {
         ),
         investigation_id: Type.Optional(Ulid),
         sharing_policy: Type.Optional(SharingPolicy),
+        api_key_env: Type.Optional(
+          Type.String({
+            minLength: 1,
+            description:
+              'NAME of the environment variable on the node that holds the target API key; the key itself never passes through a tool',
+          }),
+        ),
       },
       { additionalProperties: false },
     ),
