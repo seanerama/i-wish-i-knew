@@ -108,6 +108,13 @@ member surfaces behind `IWIK_FEATURE_ENROLLMENT` and are not part of the JSON AP
 |---|---|---|
 | `GET /v1/whoami` | any valid node token | returns `{ "node_id": "<ulid>", "org_display_name": "<string>", "scopes": ["query", …] }` so a runner can learn its own node id without operator input; never returns `org_ref` |
 
+## Withdrawal wire details (additive, recorded 2026-09-06 from stage 7)
+
+- `POST /v1/withdrawals` body: `{ "run_ids": ["<ulid>", …], "reason_code": "member_request|data_error|policy_change" }` (max 100 ids). Response `201 { withdrawal_id, effective_revision }`; the identical sorted set again returns `200` with the same `withdrawal_id`. Any id not owned by the caller → `404 not_found` with no indication which.
+- When `IWIK_FEATURE_WITHDRAWAL` is off the endpoint answers `404` with error code `feature_disabled`.
+- `GET /v1/runs/{run_id}` additionally returns `withdrawn_at` and `withdrawn_revision` (null until withdrawn) and `sharing_policy`.
+- Receipt staleness: a `query`-kind receipt reads `status: "stale"` once any later evidence revision has affected its `protocol_ref` (new intake or withdrawal). Intake receipts never go stale.
+
 ## Versioning
 
 Frozen at **v1**. Changes are **additive only** — a breaking change is a NEW
