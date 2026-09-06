@@ -119,7 +119,21 @@ another organization.
 `"<3"`, `"3-5"`, `"6-10"`, `"11+"` for organizations and `"<5"`, `"5-10"`,
 `"11-50"`, `"51+"` for runs. A receipt with `status = insufficient_evidence`
 carries `"<3"` / `"<5"` and `suppression_reasons` including
-`no_cooperative_evidence`; it never carries a result body.
+`no_cooperative_evidence`; it never carries a cooperative result body. The only
+`result` member a suppressed or insufficient receipt may carry is `own_evidence`,
+which summarises the caller's own runs (recorded 2026-09-06 from stage 9).
+
+## Released receipt sections (additive, recorded 2026-09-06 from stage 9)
+
+`AnswerReceipt.result` may carry these optional sections when `status = released`:
+`findings`, `applicability`, `distributions`, `missingness`, `contradictions`,
+`uncertainty`, `freshness`, `limitations`, `own_evidence`. Stamped versions:
+`policy_version = "2026-09-p1"`, `calculation_version = "latency-v1"`.
+`suppression_reasons` gained `min_runs` and `cohort_too_large`. A pinned query
+(`as_of_revision`) never readmits a withdrawn run; if the pinned cohort no longer
+reproduces the release recorded at that revision, `limitations` carries the fixed
+entry "Pinned cohort no longer reproducible: contributions changed since the
+pinned revision." and nothing about what changed.
 
 ## Versioning
 

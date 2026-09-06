@@ -121,6 +121,11 @@ member surfaces behind `IWIK_FEATURE_ENROLLMENT` and are not part of the JSON AP
 - An intake receipt may carry `status: "duplicate"` with `duplicate_of: "<run_id>"` when the same measurement digest was already accepted from the caller's own organization. Duplicates are stored, count toward nothing, and do not bump the evidence revision.
 - A submitter is never told whether its measurement matched another organization's.
 
+## Cooperative query wire details (additive, recorded 2026-09-06 from stage 9)
+
+- `POST /v1/evidence/query` behind `IWIK_FEATURE_COOPERATIVE_QUERY` (off → the stage 5 stub). `as_of_revision` above the current revision → `422` with path `/as_of_revision` and rule `maximum`. A cohort above `IWIK_QUERY_COHORT_CAP` (default 500 runs) is suppressed with `cohort_too_large` before any body is decrypted.
+- Console `GET /receipts/<id>` renders a receipt for the signed-in organization only; other organizations' receipts are `404`.
+
 ## Versioning
 
 Frozen at **v1**. Changes are **additive only** — a breaking change is a NEW
