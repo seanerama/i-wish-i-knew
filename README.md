@@ -47,7 +47,8 @@ npm run dev                                      # http://localhost:3000  (conso
 
 Service configuration is environment-only: `DATABASE_URL`, `IWIK_KEK`, `PORT`,
 `IWIK_FEATURE_INTAKE` (kill-switch for preview/submit; default `off` when
-`NODE_ENV=production`, `on` otherwise), and the optional seed identity
+`NODE_ENV=production`, `on` otherwise), `IWIK_FEATURE_WITHDRAWAL` (stage 7,
+default `off` everywhere; see "Withdrawal" below), and the optional seed identity
 `IWIK_SEED_ORG`, `IWIK_SEED_NODE_TOKEN`, `IWIK_SEED_NODE_PUBKEY` (base64 raw
 Ed25519 public key), `IWIK_SEED_NODE_ID`. Extra secret patterns for intake:
 `IWIK_SECRET_PATTERNS` (JSON array of regex sources). `IWIK_TRUST_PROXY`
@@ -73,8 +74,45 @@ node packages/runner/bin/iwik.cjs policy allow-target 127.0.0.1:8089
 node packages/runner/bin/iwik.cjs run --plan <plan_id>              # or run --protocol ... --target ... directly
 node packages/runner/bin/iwik.cjs report <run_id>                   # "Local evidence only — not corroborated by the cooperative"
 node packages/runner/bin/iwik.cjs preview <run_id> && node packages/runner/bin/iwik.cjs submit <run_id>
+node packages/runner/bin/iwik.cjs withdraw <run_id...> --reason member_request   # needs IWIK_FEATURE_WITHDRAWAL=on (smoke/withdrawal.md)
 IWIK_MCP_ENABLED=on node packages/runner/bin/iwik.cjs mcp           # stdio MCP server for agents (smoke/mcp.md)
 ```
+
+## Withdrawal and the worker (stage 7)
+
+Behind `IWIK_FEATURE_WITHDRAWAL` (default **off**: `POST /v1/withdrawals`
+and the console form answer `404 feature_disabled`, and the MCP tool
+`withdraw_contribution` answers `feature_disabled` with a next step):
+
+- `POST /v1/withdrawals` (scope `publish`) with `{ "run_ids": [...],
+  "reason_code": "member_request" | "data_error" | "policy_change" }`
+  withdraws the caller's own runs. Every id must belong to the caller's
+  organization; any foreign or unknown id makes the whole request
+  `404 not_found` and nothing is withdrawn (the response never says which).
+  The withdrawal is one evidence-revision increment, serialized with intake on
+  the same lock; the runs are marked `withdrawn_at` / `withdrawn_revision` in
+  that transaction and the same set (any order) returns the original
+  `withdrawal_id` with `200`. `iwik withdraw <run_id...> --reason <code>` and
+  the `/org` page (list of own runs, checkbox form with a confirmation) are the
+  member surfaces.
+- **Stale receipts** (ADR-0002 §6): `evidence.revision_log` records which
+  protocol each revision touched (intake and withdrawal). `GET /v1/receipts/{id}`
+  reads a query receipt as `status: "stale"` when a later revision touched its
+  protocol; nothing else in the receipt changes and nothing says what was
+  removed. Intake receipts never go stale. Delivered answers cannot be recalled.
+- **Worker.** `node packages/service/dist/worker.js` runs the job loop:
+  every `IWIK_WORKER_INTERVAL_MS` (default `5000`) it claims jobs with
+  `SELECT ... FOR UPDATE SKIP LOCKED` (several workers share one queue), retries
+  a failing job 5 times with exponential backoff, then leaves it `state =
+  failed` with `last_error`; `locked_at` / `locked_by` show who holds a running
+  job, and a lock older than 10 minutes is re-queued. `--once` does one pass
+  and exits (tests, cron); SIGTERM finishes the job in flight and exits 0. Job
+  kinds: `reap_previews` (expired previews, scheduled hourly by the worker
+  itself), `withdrawal_apply` (re-asserts the marks and evicts revision-keyed
+  `evidence.cache` rows, empty until stage 9), and `sharing_backfill` (sets
+  `evidence.runs.sharing_policy` from the decrypted body for rows that predate
+  the stage 7 migration; the column is trustworthy only where
+  `backfill_version` is set, and intake sets both on insert).
 
 ## Enrollment (pilot)
 

@@ -10,6 +10,7 @@
   "properties": {
     "run_ids": {
       "minItems": 1,
+      "maxItems": 100,
       "type": "array",
       "items": {
         "pattern": "^[0-9A-HJKMNP-TV-Z]{26}$",
@@ -18,8 +19,18 @@
       }
     },
     "reason": {
+      "description": "Legacy free-text reason (stage 5). Never sent to the service: it is used only when it exactly equals a reason_code value.",
       "type": "string"
+    },
+    "reason_code": {
+      "type": "string",
+      "enum": [
+        "member_request",
+        "data_error",
+        "policy_change"
+      ],
+      "description": "Withdrawal reason: member_request | data_error | policy_change"
     }
   },
-  "description": "Withdraw your own runs; effective at the next evidence revision (milestone 0.3). Scope: publish; side effect: remote_write."
+  "description": "Withdraw your own runs; effective at the next evidence revision. Every run id must belong to your organization; the service never says which one was not. Scope: publish; side effect: remote_write."
 }

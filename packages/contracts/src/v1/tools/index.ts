@@ -15,6 +15,7 @@ import {
   Digest,
   OpaqueObject,
   ProtocolRef,
+  StringEnum,
   Timestamp,
   Ulid,
 } from '../common.js';
@@ -141,6 +142,16 @@ export const PlanSummary = Type.Object(
   { additionalProperties: false, description: 'A saved plan under ~/.iwik/plans/<plan_id>.json' },
 );
 export type PlanSummary = Static<typeof PlanSummary>;
+
+/**
+ * `POST /v1/withdrawals` reason vocabulary (stage 7, additive). Enums only
+ * gain members.
+ */
+export const WithdrawalReasonCode = StringEnum(
+  ['member_request', 'data_error', 'policy_change'] as const,
+  'Withdrawal reason: member_request | data_error | policy_change',
+);
+export type WithdrawalReasonCode = Static<typeof WithdrawalReasonCode>;
 
 // ---------------------------------------------------------------------- tools
 
@@ -326,15 +337,33 @@ export const tools = {
     ),
   }),
   withdraw_contribution: define({
-    description: 'Withdraw your own runs; effective at the next evidence revision (milestone 0.3).',
+    description:
+      'Withdraw your own runs; effective at the next evidence revision. Every run id must belong to your organization; the service never says which one was not.',
     scope: 'publish',
     side_effect: 'remote_write',
     input: Type.Object(
-      { run_ids: Type.Array(Ulid, { minItems: 1 }), reason: Type.Optional(Type.String()) },
+      {
+        run_ids: Type.Array(Ulid, { minItems: 1, maxItems: 100 }),
+        reason: Type.Optional(
+          Type.String({
+            description:
+              'Legacy free-text reason (stage 5). Never sent to the service: it is used only when it exactly equals a reason_code value.',
+          }),
+        ),
+        // Stage 7 (additive): the member-api reason vocabulary; defaults to member_request.
+        reason_code: Type.Optional(WithdrawalReasonCode),
+      },
       { additionalProperties: false },
     ),
     output: toolOutput(
-      Type.Object({ withdrawal_id: Ulid }, { additionalProperties: false }),
+      Type.Object(
+        {
+          withdrawal_id: Ulid,
+          // Stage 7 (additive): the evidence revision at which the withdrawal took effect.
+          effective_revision: Type.Optional(Count),
+        },
+        { additionalProperties: false },
+      ),
       'POST /v1/withdrawals',
     ),
   }),

@@ -54,6 +54,7 @@ iwik report <run_id> | --protocol <ref>  [--json] [--packs-dir <dir>]
 iwik preview <run_id> [--share private|cooperative]
 iwik submit <run_id>
 iwik receipt <id>
+iwik withdraw <run_id...> --reason member_request|data_error|policy_change   # needs IWIK_FEATURE_WITHDRAWAL=on on the service
 iwik vault
 iwik plans <plan_id>
 iwik mcp [--packs-dir <dir>]                     # needs IWIK_MCP_ENABLED=on
@@ -80,7 +81,13 @@ iwik mcp [--packs-dir <dir>]                     # needs IWIK_MCP_ENABLED=on
   header `Local evidence only — not corroborated by the cooperative`.
 - `preview` prints the sanitization report and the exact body `submit` will
   send. `submit` prints the receipt. `receipt` prints a receipt (intake or
-  query). `plans` prints a saved plan with the runs executed from it.
+  query; a query receipt reads `stale` once a later evidence revision touched
+  its protocol). `withdraw` asks the service to withdraw your organization's
+  runs (stage 7): only ids and the reason code cross the wire, the withdrawal
+  is one evidence-revision increment, the same set is the same withdrawal, and
+  a set with any run that is not yours is `not_found` as a whole (exit `5`); it
+  prints the withdrawal id. `plans` prints a saved plan with the runs executed
+  from it.
 - Every failure exits nonzero with one line `iwik: <code>: <reason>` on
   stderr: `2` usage, `3` policy and budget denial (`policy_denied`,
   `target_not_allowed`, `budget_unknown`, `budget_exceeded`, `feature_disabled`),
@@ -309,7 +316,8 @@ instructions.
 | `preview_contribution` | `iwik preview`; returns the sanitization report and the exact `run` that would be sent                                            |
 | `submit_run`           | `iwik submit`; refuses without a preview                                                                                         |
 | `get_receipt`          | `GET /v1/receipts/{id}` (intake or query receipts)                                                                               |
-| `challenge_finding`, `report_outcome`, `withdraw_contribution` | present and frozen; answer `not_yet_available` with a `next_step` naming milestone 0.3                     |
+| `withdraw_contribution` | `iwik withdraw`; `run_ids` plus a `reason_code` (`member_request`, `data_error`, `policy_change`; the legacy free-text `reason` is never sent); returns `withdrawal_id` and `effective_revision`; `feature_disabled` with a next step when the deployment has `IWIK_FEATURE_WITHDRAWAL` off |
+| `challenge_finding`, `report_outcome` | present and frozen; answer `not_yet_available` with a `next_step` naming milestone 0.3 stage 10             |
 
 **Dark-launch flag:** `IWIK_MCP_ENABLED` (default off). Without it `iwik mcp`
 exits `3` with `feature_disabled` and says why. Attach to Claude Code with
@@ -351,6 +359,7 @@ the local report (header, schema, claims, Markdown), `signed_at` reuse rules,
 the SDK client (the ten tools with the committed schemas verbatim, the
 kill-switch, `plan_test` → `run_test` denied → policy → `run_test` →
 `preview_contribution` → `submit_run` → `get_receipt`, `query_evidence` →
-`insufficient_evidence`, the three `not_yet_available` tools) against an
+`insufficient_evidence`, `withdraw_contribution`, the two `not_yet_available`
+tools) against an
 in-process mirror of the member-api. The full walking skeleton against the
 real service and PostgreSQL lives in `packages/service/test/spine.test.ts`.

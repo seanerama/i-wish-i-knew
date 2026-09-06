@@ -23,6 +23,8 @@
         <dd id="intake-state"><%= it.intake_enabled ? 'enabled' : 'disabled (IWIK_FEATURE_INTAKE=off)' %></dd>
         <dt>Enrollment</dt>
         <dd id="enrollment-state"><%= it.enrollment_enabled ? 'enabled' : 'disabled (IWIK_FEATURE_ENROLLMENT=off)' %></dd>
+        <dt>Withdrawal</dt>
+        <dd id="withdrawal-state"><%= it.withdrawal_enabled ? 'enabled' : 'disabled (IWIK_FEATURE_WITHDRAWAL=off)' %></dd>
         <dt>Accepted protocols</dt>
         <dd id="protocols"><%= it.protocols.length === 0 ? '(none)' : it.protocols.join(', ') %></dd>
       </dl>

@@ -22,6 +22,7 @@ import { loadPlan, plan, planSummary, runPlanCommand } from './plan.js';
 import { loadPolicy, parseTarget, targetHost } from './policy.js';
 import { runPlan } from './run.js';
 import { preview, receipt, submit } from './submit.js';
+import { WITHDRAWAL_REASON_CODES, isWithdrawalReasonCode, withdraw } from './withdraw.js';
 
 export interface ToolContext {
   home?: string;
@@ -32,11 +33,10 @@ export interface ToolContext {
 
 export type Envelope<N extends ToolName = ToolName> = ToolOutput<N>;
 
-/** Tools that exist on the surface but whose service side lands in milestone 0.3. */
+/** Tools that exist on the surface but whose service side lands later in milestone 0.3 (stage 10). */
 export const NOT_YET_AVAILABLE: ReadonlySet<ToolName> = new Set<ToolName>([
   'challenge_finding',
   'report_outcome',
-  'withdraw_contribution',
 ]);
 
 function fail(code: string, message: string, nextStep?: string): ToolErrorEnvelope {
@@ -128,8 +128,8 @@ function clientFor(home: string, ctx: ToolContext): ApiClient {
 function notYetAvailable(tool: ToolName, anchor: string): ToolErrorEnvelope {
   return fail(
     'not_yet_available',
-    `${tool} is not available in milestone 0.2 (local investigation); nothing was sent`,
-    `Milestone 0.3 (protected cooperative: challenge and outcome ledger, withdrawals) adds the service side of ${tool}. Keep ${anchor} for when it lands.`,
+    `${tool} is not available yet; nothing was sent`,
+    `Milestone 0.3 stage 10 (challenge and outcome ledger) adds the service side of ${tool}. Keep ${anchor} for when it lands.`,
   );
 }
 
@@ -291,8 +291,47 @@ const handlers: { [N in ToolName]: Handler<N> } = {
     return notYetAvailable('report_outcome', `receipt ${input.receipt_id} and the observation`);
   },
 
-  async withdraw_contribution(input) {
-    return notYetAvailable('withdraw_contribution', `the run ids (${input.run_ids.length})`);
+  async withdraw_contribution(input, ctx, home) {
+    // The legacy free-text `reason` is never sent; it counts only when it is
+    // exactly a vocabulary value. `reason_code` (stage 7, additive) wins.
+    const reasonCode =
+      input.reason_code ??
+      (isWithdrawalReasonCode(input.reason) ? input.reason : undefined) ??
+      'member_request';
+    try {
+      const result = await withdraw(input.run_ids, {
+        home,
+        reasonCode,
+        ...(ctx.fetch !== undefined ? { fetch: ctx.fetch } : {}),
+        ...(ctx.env !== undefined ? { env: ctx.env } : {}),
+      });
+      return ok<'withdraw_contribution'>({
+        withdrawal_id: result.withdrawal_id,
+        effective_revision: result.effective_revision,
+      });
+    } catch (err) {
+      if (err instanceof ApiError) {
+        if (err.apiCode === 'feature_disabled') {
+          return errorEnvelope(
+            err,
+            'Withdrawal is disabled on this deployment (IWIK_FEATURE_WITHDRAWAL=off); nothing was withdrawn. Ask the operator to enable it, then call withdraw_contribution again.',
+          );
+        }
+        if (err.apiCode === 'not_found') {
+          return errorEnvelope(
+            err,
+            'At least one run id is not a run of your organization (the service does not say which) and nothing was withdrawn. Check the ids with iwik vault and call withdraw_contribution again with only your own run ids.',
+          );
+        }
+        if (err.apiCode === 'validation_failed') {
+          return errorEnvelope(
+            err,
+            `Send 1-100 run ids (ULIDs) and a reason_code from: ${WITHDRAWAL_REASON_CODES.join(', ')}.`,
+          );
+        }
+      }
+      return errorEnvelope(err);
+    }
   },
 };
 

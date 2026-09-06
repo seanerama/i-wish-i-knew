@@ -1,5 +1,5 @@
 // `iwik` command line: init, policy, plan, run, report, preview, submit,
-// receipt, vault, mcp. Every failure exits nonzero with a one-line reason on
+// receipt, withdraw, vault, mcp. Every failure exits nonzero with a one-line reason on
 // stderr; token and key material are never printed. Only `run`, `plan`, and
 // `report` write something to stdout that scripts capture: an id, or the
 // report itself.
@@ -12,8 +12,10 @@ import { loadPolicy, normalizeTargetEntry, savePolicy } from './policy.js';
 import { renderMarkdown, report } from './report.js';
 import { run, runPlan } from './run.js';
 import type { RunOptions, RunResult } from './run.js';
+import type { WithdrawalReasonCode } from './withdraw.js';
 import { preview, receipt, submit } from './submit.js';
 import { listRuns, readMeta, readPreview, readReceipt } from './vault.js';
+import { WITHDRAWAL_REASON_CODES, isWithdrawalReasonCode, withdraw } from './withdraw.js';
 
 function out(text: string): void {
   process.stdout.write(text + '\n');
@@ -52,6 +54,11 @@ function collect(value: string, previous: string[]): string[] {
 function kind(value: string): 'service' | 'fixture' | 'device' {
   if (value === 'service' || value === 'fixture' || value === 'device') return value;
   throw new InvalidArgumentError('target kind must be service, fixture, or device');
+}
+
+function reasonCode(value: string): WithdrawalReasonCode {
+  if (isWithdrawalReasonCode(value)) return value;
+  throw new InvalidArgumentError(`reason must be one of: ${WITHDRAWAL_REASON_CODES.join(', ')}`);
 }
 
 function sharing(value: string): 'private' | 'cooperative' {
@@ -515,6 +522,32 @@ program
   .action(async (id: string) => {
     try {
       out(JSON.stringify(await receipt(id, { home: homeOf() }), null, 2));
+    } catch (e) {
+      fail(e);
+    }
+  });
+
+program
+  .command('withdraw <run_id...>')
+  .description(
+    'withdraw your own runs from the cooperative (effective at the next evidence revision; cannot be undone); prints the withdrawal id',
+  )
+  .requiredOption(
+    '--reason <code>',
+    `reason code: ${WITHDRAWAL_REASON_CODES.join(' | ')}`,
+    reasonCode,
+  )
+  .action(async (runIds: string[], opts: { reason: WithdrawalReasonCode }) => {
+    try {
+      const result = await withdraw(runIds, { home: homeOf(), reasonCode: opts.reason });
+      err(
+        `${result.status === 201 ? 'withdrawal recorded' : 'already withdrawn'}: ${result.run_ids.length} run(s), ` +
+          `reason ${result.reason_code}, effective at evidence revision ${result.effective_revision}`,
+      );
+      err(
+        'receipts issued for these protocols before that revision now read stale; delivered answers cannot be recalled',
+      );
+      out(result.withdrawal_id);
     } catch (e) {
       fail(e);
     }

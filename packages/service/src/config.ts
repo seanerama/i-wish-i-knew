@@ -57,6 +57,13 @@ export interface Config {
   sessionKey: Buffer;
   /** Invite lifetime in milliseconds (`IWIK_INVITE_TTL_MS`, default 7 days). */
   inviteTtlMs: number;
+  /**
+   * Stage 7: `POST /v1/withdrawals`, the console withdraw form, and the MCP
+   * `withdraw_contribution` tool. Default OFF everywhere (kill switch).
+   */
+  featureWithdrawal: boolean;
+  /** Worker poll interval in milliseconds (`IWIK_WORKER_INTERVAL_MS`, default 5 s). */
+  workerIntervalMs: number;
 }
 
 const here = dirname(fileURLToPath(import.meta.url));
@@ -220,5 +227,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
       7 * 24 * 60 * 60 * 1000,
       'IWIK_INVITE_TTL_MS',
     ),
+    featureWithdrawal: flag(env['IWIK_FEATURE_WITHDRAWAL'], false),
+    workerIntervalMs: positiveInt(env['IWIK_WORKER_INTERVAL_MS'], 5000, 'IWIK_WORKER_INTERVAL_MS'),
   };
 }

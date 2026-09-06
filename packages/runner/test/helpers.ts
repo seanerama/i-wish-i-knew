@@ -173,6 +173,13 @@ export interface FakeService {
   runs: Map<string, { digest: string; receipt: Record<string, unknown> }>;
   receipts: Map<string, Record<string, unknown>>;
   queries: unknown[];
+  /** Stage 7: withdrawals recorded, keyed by the sorted run id set. */
+  withdrawals: Map<
+    string,
+    { withdrawal_id: string; effective_revision: number; reason_code: string }
+  >;
+  /** Stage 7: when false the withdrawal endpoint answers 404 feature_disabled. */
+  withdrawalEnabled: boolean;
   pubkey: string;
   lastBody: unknown;
   close: () => Promise<void>;
@@ -200,6 +207,8 @@ export function fakeService(): Promise<FakeService> {
     runs: new Map(),
     receipts: new Map(),
     queries: [],
+    withdrawals: new Map(),
+    withdrawalEnabled: true,
     pubkey: '',
     lastBody: undefined,
     close: () => new Promise<void>((resolve) => state.server.close(() => resolve())),
@@ -236,13 +245,50 @@ export function fakeService(): Promise<FakeService> {
       return found ? json(res, 200, found) : error(res, 404, 'not_found');
     }
     const text = await readBody(req);
-    let body: { run?: Run; preview_id?: string; protocol_ref?: string; context_filters?: unknown };
+    let body: {
+      run?: Run;
+      preview_id?: string;
+      protocol_ref?: string;
+      context_filters?: unknown;
+      run_ids?: unknown;
+      reason_code?: unknown;
+    };
     try {
       body = JSON.parse(text) as typeof body;
     } catch {
       return error(res, 400, 'bad_json');
     }
     state.lastBody = body;
+    if (req.method === 'POST' && url === '/v1/withdrawals') {
+      if (!state.withdrawalEnabled) return error(res, 404, 'feature_disabled');
+      const ids = body.run_ids;
+      const details: unknown[] = [];
+      if (!Array.isArray(ids) || ids.length === 0)
+        details.push({ path: '/run_ids', rule: 'minItems' });
+      if (!['member_request', 'data_error', 'policy_change'].includes(String(body.reason_code)))
+        details.push({ path: '/reason_code', rule: 'enum' });
+      if (details.length > 0) return error(res, 422, 'validation_failed', details);
+      const set = [...new Set(ids as string[])].sort();
+      if (!set.every((id) => state.runs.has(id))) return error(res, 404, 'not_found');
+      const key = set.join(',');
+      const prior = state.withdrawals.get(key);
+      if (prior !== undefined) {
+        return json(res, 200, {
+          withdrawal_id: prior.withdrawal_id,
+          effective_revision: prior.effective_revision,
+        });
+      }
+      const recorded = {
+        withdrawal_id: id(),
+        effective_revision: state.runs.size + state.withdrawals.size + 1,
+        reason_code: String(body.reason_code),
+      };
+      state.withdrawals.set(key, recorded);
+      return json(res, 201, {
+        withdrawal_id: recorded.withdrawal_id,
+        effective_revision: recorded.effective_revision,
+      });
+    }
     if (req.method === 'POST' && url === '/v1/evidence/query') {
       if (typeof body.protocol_ref !== 'string')
         return error(res, 422, 'validation_failed', [{ path: '/protocol_ref', rule: 'required' }]);

@@ -72,7 +72,8 @@ export function toolList() {
       outputSchema: toolSchemaDocument(name, 'output'),
       annotations: {
         readOnlyHint: definition.side_effect === 'read',
-        destructiveHint: definition.side_effect === 'paid',
+        // Paid runs and withdrawals (which cannot be undone) are destructive.
+        destructiveHint: definition.side_effect === 'paid' || name === 'withdraw_contribution',
         idempotentHint: definition.side_effect === 'read',
         openWorldHint: definition.side_effect !== 'local_write',
       },

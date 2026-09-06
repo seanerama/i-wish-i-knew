@@ -14,6 +14,7 @@ import { ApiError } from '../../errors.js';
 import type { ErrorDetail } from '../../errors.js';
 import { ulid } from '../../ulid.js';
 import type { Envelope } from '../crypto/index.js';
+import { SHARING_BACKFILL_VERSION } from '../jobs/handlers.js';
 import type { AuthContext } from '../identity/index.js';
 import { nodeIsRevoked, parsePublicKey, requireScope } from '../identity/index.js';
 import type { Registry } from '../registry/index.js';
@@ -170,6 +171,34 @@ async function findReceipt(
   return row === undefined ? undefined : toReceipt(row);
 }
 
+/** The latest evidence revision that touched a protocol (0 when none has). */
+export async function latestRevisionFor(db: Queryable, protocolRef: string): Promise<number> {
+  const res = await db.query<{ latest: string | number | null }>(
+    `SELECT max(revision) AS latest FROM evidence.revision_log WHERE protocol_ref = $1`,
+    [protocolRef],
+  );
+  return Number(res.rows[0]?.latest ?? 0);
+}
+
+/**
+ * Staleness on read (stage 7, ADR-0002 §6): a query receipt pinned at an
+ * evidence revision older than the latest revision that touched its
+ * protocol (an accepted run or a withdrawal) reads `stale`. Nothing else
+ * about the receipt changes and nothing says what moved. Intake receipts
+ * record an acceptance and never go stale.
+ */
+export async function withStaleness(db: Queryable, receipt: Receipt): Promise<Receipt> {
+  if (receipt.kind !== 'query') return receipt;
+  const cohort = receipt['cohort'];
+  const protocolRef =
+    typeof cohort === 'object' && cohort !== null
+      ? (cohort as Record<string, unknown>)['protocol_ref']
+      : undefined;
+  if (typeof protocolRef !== 'string') return receipt;
+  const latest = await latestRevisionFor(db, protocolRef);
+  return latest > receipt.evidence_revision ? { ...receipt, status: 'stale' } : receipt;
+}
+
 export async function currentRevision(db: Queryable): Promise<number> {
   const res = await db.query<{ revision: string | number }>(
     `SELECT revision FROM evidence.revision WHERE singleton`,
@@ -218,6 +247,10 @@ async function storeRun(
         WHERE singleton RETURNING revision`,
     );
     const revision = Number(bumped.rows[0]?.revision ?? 0);
+    await client.query(
+      `INSERT INTO evidence.revision_log (revision, protocol_ref, kind) VALUES ($1, $2, 'intake')`,
+      [revision, run.protocol_ref],
+    );
 
     const stored: Run = {
       ...run,
@@ -246,8 +279,9 @@ async function storeRun(
     await client.query(
       `INSERT INTO evidence.runs
          (run_id, org_ref, protocol_ref, protocol_digest, harness_digest, execution_status,
-          content_digest, body_ciphertext, key_id, receipt_id, evidence_revision)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)`,
+          content_digest, body_ciphertext, key_id, receipt_id, evidence_revision,
+          sharing_policy, backfill_version)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)`,
       [
         run.run_id,
         auth.org_ref,
@@ -260,6 +294,8 @@ async function storeRun(
         sealed.key_id,
         receiptId,
         revision,
+        sharing_policy,
+        SHARING_BACKFILL_VERSION,
       ],
     );
     const row = inserted.rows[0];
@@ -355,7 +391,7 @@ export function registerIntakeRoutes(app: FastifyInstance, deps: IntakeDeps): vo
       const auth = requireAuth(request);
       const receipt = await findReceipt(deps.pool, request.params.id, auth.org_ref);
       if (receipt === undefined) throw new ApiError(404, 'not_found');
-      return receipt;
+      return withStaleness(deps.pool, receipt);
     },
   );
 
@@ -370,8 +406,11 @@ export function registerIntakeRoutes(app: FastifyInstance, deps: IntakeDeps): vo
         receipt_id: string;
         evidence_revision: string | number;
         received_at: Date;
+        withdrawn_at: Date | null;
+        withdrawn_revision: string | number | null;
       }>(
-        `SELECT body_ciphertext, key_id, receipt_id, evidence_revision, received_at
+        `SELECT body_ciphertext, key_id, receipt_id, evidence_revision, received_at,
+                withdrawn_at, withdrawn_revision
            FROM evidence.runs WHERE run_id = $1 AND org_ref = $2`,
         [request.params.run_id, auth.org_ref],
       );
@@ -383,6 +422,13 @@ export function registerIntakeRoutes(app: FastifyInstance, deps: IntakeDeps): vo
         receipt_id: row.receipt_id,
         evidence_revision: Number(row.evidence_revision),
         received_at: row.received_at.toISOString(),
+        // Stage 7 (additive): present only once the run is withdrawn.
+        ...(row.withdrawn_at !== null && row.withdrawn_revision !== null
+          ? {
+              withdrawn_at: row.withdrawn_at.toISOString(),
+              withdrawn_revision: Number(row.withdrawn_revision),
+            }
+          : {}),
       };
     },
   );

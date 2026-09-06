@@ -22,6 +22,7 @@ import { registerIdentity, seedIdentity } from './modules/identity/index.js';
 import { registerIntakeRoutes } from './modules/intake/index.js';
 import { loadRegistry, registerRegistryRoutes } from './modules/registry/index.js';
 import type { Registry } from './modules/registry/index.js';
+import { registerWithdrawalRoutes } from './modules/withdrawal/index.js';
 import { buildOpenApi } from './openapi.js';
 
 export interface AppContext {
@@ -98,6 +99,7 @@ export async function buildApp(config: Config): Promise<FastifyInstance> {
   registerAggregateRoutes(app, { pool, registry });
   registerConsoleRoutes(app, { pool, config, registry, loginFailures, loginIpFailures });
   registerEnrollmentRoutes(app, { pool, config });
+  registerWithdrawalRoutes(app, { pool, config });
 
   const openapi = buildOpenApi();
   app.get('/v1/openapi.json', async () => openapi);
@@ -115,6 +117,7 @@ export async function buildApp(config: Config): Promise<FastifyInstance> {
         protocols: registry.size,
         intake: config.featureIntake ? 'enabled' : 'disabled',
         enrollment: config.featureEnrollment ? 'enabled' : 'disabled',
+        withdrawal: config.featureWithdrawal ? 'enabled' : 'disabled',
         operator_token: config.operatorTokenHash === undefined ? 'unset' : 'set',
         kek: config.kekSource,
       },

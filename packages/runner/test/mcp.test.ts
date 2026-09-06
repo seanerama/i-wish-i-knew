@@ -2,8 +2,8 @@
 // schemas are the committed contracts/schema/v1/tools/ files verbatim), the
 // kill-switch, and the full flow plan_test -> run_test denied -> policy ->
 // run_test -> preview_contribution -> submit_run -> get_receipt, plus
-// query_evidence answering insufficient_evidence and the three
-// not_yet_available tools.
+// query_evidence answering insufficient_evidence, withdraw_contribution
+// (stage 7) and the two not_yet_available tools.
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
 import { readFileSync } from 'node:fs';
@@ -301,7 +301,62 @@ function require_ok(path: string): boolean {
   return readFileSync(path, 'utf8').length > 0;
 }
 
-test('challenge_finding, report_outcome, withdraw_contribution: present, frozen, not yet available', async () => {
+test('withdraw_contribution: real call, reason vocabulary, idempotent set, feature_disabled and not_found with next steps', async () => {
+  const runId = [...service.runs.keys()][0];
+  assert.ok(runId, 'the full-flow test submitted a run');
+  const queriesBefore = service.queries.length;
+
+  const withdrawn = await call('withdraw_contribution', {
+    run_ids: [runId],
+    reason_code: 'data_error',
+  });
+  assert.equal(withdrawn.ok, true, JSON.stringify(withdrawn));
+  assert.match(String(withdrawn.data?.['withdrawal_id']), /^[0-9A-HJKMNP-TV-Z]{26}$/);
+  assert.equal(typeof withdrawn.data?.['effective_revision'], 'number');
+  assert.deepEqual(service.lastBody, { run_ids: [runId], reason_code: 'data_error' });
+  assert.equal(service.withdrawals.size, 1);
+
+  // the legacy free-text reason is never sent; the default code goes instead
+  const again = await call('withdraw_contribution', {
+    run_ids: [runId, runId],
+    reason: 'cache was warm',
+  });
+  assert.equal(again.ok, true);
+  assert.equal(again.data?.['withdrawal_id'], withdrawn.data?.['withdrawal_id']);
+  assert.deepEqual(service.lastBody, { run_ids: [runId], reason_code: 'member_request' });
+  assert.equal(service.withdrawals.size, 1, 'the same set is the same withdrawal');
+
+  // a run that is not ours: not_found with a next step, nothing named
+  const foreignId = '01ARZ3NDEKTSV4RRFFQ69G5FXR';
+  const foreign = await call('withdraw_contribution', { run_ids: [foreignId] });
+  assert.equal(foreign.ok, false);
+  assert.equal(foreign.error?.code, 'not_found');
+  assert.match(foreign.error?.next_step ?? '', /not a run of your organization/);
+  assert.match(foreign.error?.next_step ?? '', /iwik vault/);
+  assert.ok(!JSON.stringify(foreign).includes(foreignId));
+
+  // outside the vocabulary: refused by the input schema, nothing sent
+  const sent = service.withdrawals.size;
+  const bad = await call('withdraw_contribution', { run_ids: [runId], reason_code: 'because' });
+  assert.equal(bad.error?.code, 'validation_failed');
+  assert.match(bad.error?.message ?? '', /\/reason_code enum/);
+  assert.equal(service.withdrawals.size, sent);
+
+  // the deployment has withdrawal switched off
+  service.withdrawalEnabled = false;
+  try {
+    const off = await call('withdraw_contribution', { run_ids: [runId] });
+    assert.equal(off.ok, false);
+    assert.equal(off.error?.code, 'feature_disabled');
+    assert.match(off.error?.next_step ?? '', /IWIK_FEATURE_WITHDRAWAL/);
+    assert.match(off.error?.next_step ?? '', /nothing was withdrawn/);
+  } finally {
+    service.withdrawalEnabled = true;
+  }
+  assert.equal(service.queries.length, queriesBefore, 'no query was made');
+});
+
+test('challenge_finding, report_outcome: present, frozen, not yet available', async () => {
   const receiptId = '01ARZ3NDEKTSV4RRFFQ69G5FAV';
   const challenge = await call('challenge_finding', {
     receipt_id: receiptId,
@@ -318,9 +373,6 @@ test('challenge_finding, report_outcome, withdraw_contribution: present, frozen,
   });
   assert.equal(outcome.error?.code, 'not_yet_available');
   assert.match(outcome.error?.next_step ?? '', /[Mm]ilestone 0\.3/);
-  const withdrawal = await call('withdraw_contribution', { run_ids: [receiptId] });
-  assert.equal(withdrawal.error?.code, 'not_yet_available');
-  assert.match(withdrawal.error?.next_step ?? '', /[Mm]ilestone 0\.3/);
-  // none of them reached the service
+  // neither reached the service
   assert.equal(service.queries.length, 1);
 });

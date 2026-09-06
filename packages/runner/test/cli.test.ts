@@ -6,7 +6,16 @@ import { readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { after, test } from 'node:test';
 import { loadPolicy } from '../src/index.js';
-import { cleanupTemp, cliPath, NODE_ID, repoRoot, tempDir, TEST_TOKEN } from './helpers.js';
+import {
+  cleanupTemp,
+  cliPath,
+  fakeService,
+  makeHome,
+  NODE_ID,
+  repoRoot,
+  tempDir,
+  TEST_TOKEN,
+} from './helpers.js';
 
 after(cleanupTemp);
 
@@ -240,4 +249,71 @@ test('run: policy denial exits 3 with a one-line reason; submit without preview 
   const noKey = iwik(fresh, ['receipt', 'x']);
   assert.equal(noKey.code, 7);
   assert.match(noKey.stderr, /^iwik: not_initialized: /);
+});
+
+/** The CLI driven asynchronously, so an in-process fake service can answer it. */
+function iwikAsync(home: string, args: string[]) {
+  return new Promise<{ code: number | null; stdout: string; stderr: string; all: string }>(
+    (resolve) => {
+      const child = spawn(process.execPath, [cliPath, '--home', home, ...args], {
+        env: { PATH: process.env['PATH'] ?? '' },
+        stdio: ['ignore', 'pipe', 'pipe'],
+      });
+      let stdout = '';
+      let stderr = '';
+      child.stdout.setEncoding('utf8');
+      child.stderr.setEncoding('utf8');
+      child.stdout.on('data', (c: string) => (stdout += c));
+      child.stderr.on('data', (c: string) => (stderr += c));
+      child.once('close', (code) => resolve({ code, stdout, stderr, all: stdout + stderr }));
+    },
+  );
+}
+
+test('withdraw: validates ids and the reason vocabulary locally, prints the withdrawal id, exits 5 on not_found', async () => {
+  const service = await fakeService();
+  try {
+    const { home } = makeHome(service.url);
+    const runId = '01ARZ3NDEKTSV4RRFFQ69G5FAV';
+    service.runs.set(runId, { digest: 'sha256:' + 'd'.repeat(64), receipt: {} });
+
+    const noReason = iwik(home, ['withdraw', runId]);
+    assert.equal(noReason.code, 1);
+    assert.match(noReason.stderr, /required option '--reason <code>'/);
+    const badReason = iwik(home, ['withdraw', runId, '--reason', 'because']);
+    assert.equal(badReason.code, 1);
+    assert.match(
+      badReason.stderr,
+      /reason must be one of: member_request, data_error, policy_change/,
+    );
+    const badId = iwik(home, ['withdraw', 'not-a-ulid', '--reason', 'data_error']);
+    assert.equal(badId.code, 2);
+    assert.match(badId.stderr, /^iwik: usage: .*\[\/run_ids\/0 pattern\]/);
+    assert.equal(service.withdrawals.size, 0, 'nothing sent');
+
+    const ok = await iwikAsync(home, ['withdraw', runId, '--reason', 'data_error']);
+    assert.equal(ok.code, 0, ok.all);
+    assert.match(ok.stdout.trim(), /^[0-9A-HJKMNP-TV-Z]{26}$/);
+    assert.match(
+      ok.stderr,
+      /withdrawal recorded: 1 run\(s\), reason data_error, effective at evidence revision \d+/,
+    );
+    assert.match(ok.stderr, /cannot be recalled/);
+    assert.ok(!ok.all.includes(TEST_TOKEN));
+    const again = await iwikAsync(home, ['withdraw', runId, runId, '--reason', 'member_request']);
+    assert.equal(again.code, 0, again.all);
+    assert.equal(again.stdout, ok.stdout);
+    assert.match(again.stderr, /already withdrawn/);
+
+    const foreign = await iwikAsync(home, [
+      'withdraw',
+      '01ARZ3NDEKTSV4RRFFQ69G5FXR',
+      '--reason',
+      'member_request',
+    ]);
+    assert.equal(foreign.code, 5);
+    assert.match(foreign.stderr, /^iwik: api_error: not_found: not_found \(HTTP 404\)/);
+  } finally {
+    await service.close();
+  }
 });
