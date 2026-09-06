@@ -4,3 +4,12 @@ export { canonicalize, digest } from './canonical.js';
 export { validate, isValid } from './validate.js';
 export type { ValidationIssue, ValidationResult } from './validate.js';
 export { schemaDocument, schemaId, SCHEMA_DIALECT } from './schema.js';
+export {
+  listFiles,
+  treeDigest,
+  fileDigest,
+  protocolDigest,
+  computePackDigests,
+  staleFields,
+} from './digest.js';
+export type { PackManifest, PackDigests, PackProtocolDigests } from './digest.js';
