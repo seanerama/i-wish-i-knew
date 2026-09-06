@@ -1,8 +1,18 @@
 // Console login rate limit (stage 6): a fixed window of failed attempts per
-// organization name + client IP, in process memory. Pilot-only: a restart
-// clears it and multiple replicas do not share it; a shared store is an SRE
-// stage. The sixth attempt within a window is refused before the password
-// is checked, so the limit also bounds the scrypt work an attacker can cause.
+// organization name + client IP, in process memory. Stage 11 adds a second
+// window of the same shape keyed by client IP alone (the subject is a
+// constant), so varying the organization name from one address does not buy
+// more attempts. Both windows key on Fastify's `request.ip`, which is the
+// X-Forwarded-For client only for the hops IWIK_TRUST_PROXY trusts (0 by
+// default: the socket peer), so an untrusted header cannot pick its bucket.
+//
+// Pilot-only limitations, documented rather than solved here: the windows
+// live in one process's memory, so a restart clears them and multiple
+// replicas do not share them (an attacker spread across N replicas gets N
+// times the budget); clients behind one NAT share the per-IP window. A shared
+// store (PostgreSQL or Redis) is an SRE stage. The sixth attempt within a
+// window is refused before the password is checked, so the limit also bounds
+// the scrypt work an attacker can cause.
 import { createHash } from 'node:crypto';
 
 export interface RateLimitOptions {

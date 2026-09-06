@@ -3,13 +3,17 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title><%= it.product %> - enroll</title>
+    <title><%= it.product %> - <%= it.mode === 'reset' ? 'reset console password' : 'enroll' %></title>
     <%~ include('_style') %>
   </head>
   <body>
     <header>
       <h1><%= it.product %></h1>
-      <p class="tagline">Enroll your organization in the pilot cooperative.</p>
+      <% if (it.mode === 'reset') { %>
+        <p class="tagline" id="reset-tagline">Set a new console password for your enrolled organization.</p>
+      <% } else { %>
+        <p class="tagline">Enroll your organization in the pilot cooperative.</p>
+      <% } %>
     </header>
 
     <% if (it.error) { %>
@@ -18,39 +22,60 @@
         <% if (it.error === 'name_taken') { %>That display name is already in use by another organization. Choose another.<% } %>
         <% if (it.error === 'password') { %>Console password must be at least <%= it.password_min %> characters.<% } %>
         <% if (it.error === 'password_match') { %>The two password fields do not match.<% } %>
-        <% if (it.error === 'agree') { %>Every clause must be accepted to enroll.<% } %>
+        <% if (it.error === 'agree') { %>Every clause must be accepted to <%= it.mode === 'reset' ? 'continue' : 'enroll' %>.<% } %>
       </div>
     <% } %>
 
-    <form method="post" autocomplete="off" id="enroll-form">
+    <form method="post" autocomplete="off" id="<%= it.mode === 'reset' ? 'reset-form' : 'enroll-form' %>">
       <input type="hidden" name="_csrf" value="<%= it.csrf %>" />
 
       <h2>Organization</h2>
-      <label for="display_name">Display name (shown to the operator; also your console sign-in name)</label>
-      <input id="display_name" name="display_name" type="text" required minlength="2" maxlength="120" value="<%= it.display_name %>" />
+      <% if (it.mode === 'reset') { %>
+        <p>This reset invite is for <strong id="display-name"><%= it.display_name %></strong>. The display name, registered nodes, and issued tokens are unchanged by a password reset; only the console password is replaced.</p>
+      <% } else { %>
+        <label for="display_name">Display name (shown to the operator; also your console sign-in name)</label>
+        <input id="display_name" name="display_name" type="text" required minlength="2" maxlength="120" value="<%= it.display_name %>" />
+      <% } %>
 
-      <h2>Console password</h2>
-      <p class="muted">Pilot-only: the console uses a password you set here instead of email sign-in. Store it in your password manager; the operator cannot recover it, only re-invite you.</p>
-      <label for="password">Password (at least <%= it.password_min %> characters)</label>
+      <% if (it.mode === 'reset') { %>
+        <h2>New console password</h2>
+        <p class="muted">The previous password stops working as soon as this form is submitted, and any console session signed in with it ends. Store the new one in your password manager; the operator cannot recover it, only issue another reset invite.</p>
+      <% } else { %>
+        <h2>Console password</h2>
+        <p class="muted">Pilot-only: the console uses a password you set here instead of email sign-in. Store it in your password manager; the operator cannot recover it. If it is lost, ask the operator for a reset invite.</p>
+      <% } %>
+      <label for="password"><%= it.mode === 'reset' ? 'New password' : 'Password' %> (at least <%= it.password_min %> characters)</label>
       <input id="password" name="password" type="password" required minlength="<%= it.password_min %>" autocomplete="new-password" />
       <label for="password_confirm">Repeat password</label>
       <input id="password_confirm" name="password_confirm" type="password" required minlength="<%= it.password_min %>" autocomplete="new-password" />
 
-      <h2>Pilot terms (version <span id="terms-version"><%= it.terms_version %></span>)</h2>
-      <p class="muted">Your agreement is recorded with this version and the time of acceptance.</p>
+      <% if (it.mode !== 'reset' || it.terms_changed) { %>
+        <h2>Pilot terms (version <span id="terms-version"><%= it.terms_version %></span>)</h2>
+        <% if (it.mode === 'reset') { %>
+          <p class="muted" id="terms-changed">The pilot terms changed since your organization last accepted them. Your new agreement is recorded with this version and the time of acceptance.</p>
+        <% } else { %>
+          <p class="muted">Your agreement is recorded with this version and the time of acceptance.</p>
+        <% } %>
 
-      <div class="clause" id="clause-terms"><%= it.clauses.terms %></div>
-      <label><input type="checkbox" name="agree_terms" required /> I accept the pilot terms.</label>
+        <div class="clause" id="clause-terms"><%= it.clauses.terms %></div>
+        <label><input type="checkbox" name="agree_terms" required /> I accept the pilot terms.</label>
 
-      <div class="clause trust" id="clause-trust-boundary"><%= it.clauses.trust_boundary %></div>
-      <label><input type="checkbox" name="agree_trust_boundary" required /> I acknowledge that service operators are inside the trust boundary during the pilot.</label>
+        <div class="clause trust" id="clause-trust-boundary"><%= it.clauses.trust_boundary %></div>
+        <label><input type="checkbox" name="agree_trust_boundary" required /> I acknowledge that service operators are inside the trust boundary during the pilot.</label>
 
-      <div class="clause" id="clause-reciprocity"><%= it.clauses.reciprocity %></div>
-      <label><input type="checkbox" name="agree_reciprocity" required /> I accept the reciprocity clause.</label>
+        <div class="clause" id="clause-reciprocity"><%= it.clauses.reciprocity %></div>
+        <label><input type="checkbox" name="agree_reciprocity" required /> I accept the reciprocity clause.</label>
+      <% } else { %>
+        <p class="muted" id="terms-unchanged">Pilot terms: your organization's agreement to version <span id="terms-version"><%= it.terms_version %></span> stands; nothing to accept again.</p>
+      <% } %>
 
-      <button type="submit">Enroll</button>
+      <button type="submit"><%= it.mode === 'reset' ? 'Set password' : 'Enroll' %></button>
     </form>
 
-    <footer>After enrolling you land on <code>/org</code> to register a node and issue a token.</footer>
+    <% if (it.mode === 'reset') { %>
+      <footer>After setting the password you land on <code>/org</code>, signed in.</footer>
+    <% } else { %>
+      <footer>After enrolling you land on <code>/org</code> to register a node and issue a token.</footer>
+    <% } %>
   </body>
 </html>

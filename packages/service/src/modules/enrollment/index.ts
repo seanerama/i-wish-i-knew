@@ -1,9 +1,16 @@
 // Enrollment (stage 6, ADR-0002 / ADR-0006), behind IWIK_FEATURE_ENROLLMENT.
 //
 //   POST /v1/admin/organizations   operator token -> org + one-time invite URL
+//   POST /v1/admin/organizations/:org_id/invites
+//                                   operator token -> one-time reset invite for
+//                                   an enrolled org (stage 11): new console
+//                                   password, nodes and tokens untouched
 //   GET|POST /enroll/:invite        accept the invite: display name, console
 //                                   password, pilot terms (trust statement,
-//                                   reciprocity) recorded with version + time
+//                                   reciprocity) recorded with version + time;
+//                                   a reset invite keeps the name read-only and
+//                                   re-records the terms only if their version
+//                                   changed
 //   GET /org                        nodes and tokens of the signed-in org
 //   POST /org/nodes                 register a node by its Ed25519 public key
 //   POST /org/nodes/:id/tokens      issue a scoped token, shown exactly once
@@ -27,19 +34,22 @@ import {
   NameTakenError,
   audit,
   completeEnrollment,
+  completeReset,
   createInvite,
   createNode,
   createOrganization,
   findOpenInvite,
   findOrganizationById,
+  hasOpenInvite,
   isScope,
   issueNodeToken,
+  latestAgreedTermsVersion,
   listNodes,
   normalizePublicKey,
   revokeNode,
   revokeToken,
 } from '../identity/index.js';
-import type { Scope } from '../identity/index.js';
+import type { InviteKind, InviteRow, Scope } from '../identity/index.js';
 import { PASSWORD_MAX_LENGTH, PASSWORD_MIN_LENGTH, hashPassword } from '../identity/password.js';
 
 /** Bump when the wording of any clause below changes; agreements record it. */
@@ -111,6 +121,10 @@ type EnrollError = 'name' | 'name_taken' | 'password' | 'password_match' | 'agre
 export function registerEnrollmentRoutes(app: FastifyInstance, deps: EnrollmentDeps): void {
   const { config, pool } = deps;
   const gate = requireEnrollment(config);
+  const inviteUrl = (invite: string) => {
+    const path = `/enroll/${invite}`;
+    return config.publicUrl === undefined ? path : `${config.publicUrl}${path}`;
+  };
 
   const notFoundPage = (reply: FastifyReply) =>
     reply.status(404).view('message', {
@@ -145,22 +159,65 @@ export function registerEnrollmentRoutes(app: FastifyInstance, deps: EnrollmentD
       return { org, invite };
     });
     request.log.info({ org_id: created.org.org_id }, 'organization invited');
-    const path = `/enroll/${created.invite.invite}`;
     reply.status(201);
     return {
       org_id: created.org.org_id,
-      invite_url: config.publicUrl === undefined ? path : `${config.publicUrl}${path}`,
+      invite_url: inviteUrl(created.invite.invite),
       expires_at: created.invite.expires_at.toISOString(),
     };
   });
 
+  // Stage 11: re-invite an existing organization. An enrolled organization
+  // gets a `reset` invite (new console password; nodes, tokens, and the
+  // display name stay). An organization that never completed enrollment
+  // (its enrollment invite expired) gets a fresh `enroll` invite instead:
+  // there is no password to reset yet. Never a second organization row.
+  app.post<{ Params: { org_id: string } }>(
+    '/v1/admin/organizations/:org_id/invites',
+    { preHandler: gate },
+    async (request, reply) => {
+      if (!operatorAuthorized(request, config)) throw new ApiError(401, 'unauthorized');
+      const orgId = request.params.org_id;
+      if (!ULID_PATTERN.test(orgId)) throw new ApiError(404, 'not_found');
+      const created = await withTransaction(pool, async (client) => {
+        // Lock the organization row so two concurrent re-invites cannot both
+        // pass the open-invite check.
+        const org = await client.query<{ enrolled: boolean }>(
+          `SELECT enrolled_at IS NOT NULL AS enrolled FROM identity.organizations
+            WHERE org_id = $1 FOR UPDATE`,
+          [orgId],
+        );
+        const row = org.rows[0];
+        if (row === undefined) throw new ApiError(404, 'not_found');
+        if (await hasOpenInvite(client, orgId)) throw new ApiError(409, 'invite_exists');
+        const kind: InviteKind = row.enrolled ? 'reset' : 'enroll';
+        const invite = await createInvite(client, orgId, config.inviteTtlMs, kind);
+        await audit(client, 'org.reinvited', 'operator', `org:${orgId}`);
+        return invite;
+      });
+      request.log.info({ org_id: orgId, kind: created.kind }, 'organization re-invited');
+      reply.status(201);
+      return {
+        org_id: orgId,
+        kind: created.kind,
+        invite_url: inviteUrl(created.invite),
+        expires_at: created.expires_at.toISOString(),
+      };
+    },
+  );
+
   // --- enrollment ---------------------------------------------------------
 
-  const renderEnroll = (
-    request: FastifyRequest,
-    reply: FastifyReply,
-    view: { display_name: string; error: EnrollError | null },
-  ) =>
+  interface EnrollView {
+    /** `enroll`: first enrollment. `reset`: new password for an enrolled organization. */
+    mode: InviteKind;
+    display_name: string;
+    /** Reset only: the pilot terms version changed since the last agreement, so it is asked again. */
+    terms_changed: boolean;
+    error: EnrollError | null;
+  }
+
+  const renderEnroll = (request: FastifyRequest, reply: FastifyReply, view: EnrollView) =>
     reply.view('enroll', {
       product: PRODUCT_NAME,
       terms_version: PILOT_TERMS_VERSION,
@@ -170,6 +227,11 @@ export function registerEnrollmentRoutes(app: FastifyInstance, deps: EnrollmentD
       ...view,
     });
 
+  /** A reset invite asks for the terms again only when their version moved on. */
+  const termsChanged = async (invite: InviteRow) =>
+    invite.kind === 'reset' &&
+    (await latestAgreedTermsVersion(pool, invite.org_id)) !== PILOT_TERMS_VERSION;
+
   app.get<{ Params: { invite: string } }>(
     '/enroll/:invite',
     { preHandler: gate },
@@ -178,7 +240,12 @@ export function registerEnrollmentRoutes(app: FastifyInstance, deps: EnrollmentD
       if (invite === undefined) return notFoundPage(reply);
       const org = await findOrganizationById(pool, invite.org_id);
       if (org === undefined) return notFoundPage(reply);
-      return renderEnroll(request, reply, { display_name: org.name, error: null });
+      return renderEnroll(request, reply, {
+        mode: invite.kind,
+        display_name: org.name,
+        terms_changed: await termsChanged(invite),
+        error: null,
+      });
     },
   );
 
@@ -189,13 +256,19 @@ export function registerEnrollmentRoutes(app: FastifyInstance, deps: EnrollmentD
       requireCsrf(request, config);
       const invite = await findOpenInvite(pool, request.params.invite);
       if (invite === undefined) return notFoundPage(reply);
+      if (invite.kind === 'reset') return acceptReset(request, reply, invite);
       const displayName = field(request.body, 'display_name', ORG_NAME_MAX_LENGTH + 1).trim();
       const password = field(request.body, 'password', PASSWORD_MAX_LENGTH + 1);
       const confirm = field(request.body, 'password_confirm', PASSWORD_MAX_LENGTH + 1);
       const agreed = CLAUSE_IDS.every((c) => checked(request.body, `agree_${c}`));
       const fail = (error: EnrollError) => {
         reply.status(400);
-        return renderEnroll(request, reply, { display_name: displayName, error });
+        return renderEnroll(request, reply, {
+          mode: 'enroll',
+          display_name: displayName,
+          terms_changed: false,
+          error,
+        });
       };
       if (!validDisplayName(displayName)) return fail('name');
       if (password.length < PASSWORD_MIN_LENGTH || password.length > PASSWORD_MAX_LENGTH) {
@@ -227,6 +300,56 @@ export function registerEnrollmentRoutes(app: FastifyInstance, deps: EnrollmentD
       return reply.redirect('/org?notice=enrolled', 303);
     },
   );
+
+  // Stage 11: a reset invite sets a new console password for the existing
+  // organization. The display name is not a form field (it is shown read-only
+  // and any submitted value is ignored); nodes and tokens are untouched; the
+  // pilot terms are asked again only when their version changed.
+  async function acceptReset(request: FastifyRequest, reply: FastifyReply, invite: InviteRow) {
+    const org = await findOrganizationById(pool, invite.org_id);
+    if (org === undefined) return notFoundPage(reply);
+    const changed = await termsChanged(invite);
+    const password = field(request.body, 'password', PASSWORD_MAX_LENGTH + 1);
+    const confirm = field(request.body, 'password_confirm', PASSWORD_MAX_LENGTH + 1);
+    const agreed = !changed || CLAUSE_IDS.every((c) => checked(request.body, `agree_${c}`));
+    const fail = (error: EnrollError) => {
+      reply.status(400);
+      return renderEnroll(request, reply, {
+        mode: 'reset',
+        display_name: org.name,
+        terms_changed: changed,
+        error,
+      });
+    };
+    if (password.length < PASSWORD_MIN_LENGTH || password.length > PASSWORD_MAX_LENGTH) {
+      return fail('password');
+    }
+    if (password !== confirm) return fail('password_match');
+    if (!agreed) return fail('agree');
+
+    let result;
+    try {
+      result = await completeReset(pool, {
+        invite,
+        passwordHash: hashPassword(password),
+        termsVersion: PILOT_TERMS_VERSION,
+        clauses: CLAUSE_IDS,
+      });
+    } catch (err) {
+      if (err instanceof ApiError && err.status === 404) return notFoundPage(reply);
+      throw err;
+    }
+    setSession(reply, config, {
+      kind: 'org',
+      login_id: result.login_id,
+      org_id: result.org.org_id,
+    });
+    request.log.info(
+      { org_id: result.org.org_id, agreement_recorded: result.agreement_recorded },
+      'console password reset',
+    );
+    return reply.redirect('/org?notice=password_reset', 303);
+  }
 
   // --- organization console ----------------------------------------------
 
@@ -281,6 +404,7 @@ export function registerEnrollmentRoutes(app: FastifyInstance, deps: EnrollmentD
 
   const NOTICES = new Set([
     'enrolled',
+    'password_reset',
     'node_registered',
     'node_revoked',
     'token_revoked',

@@ -25,7 +25,7 @@
         <input id="password" name="password" type="password" required autocomplete="current-password" />
         <button type="submit">Sign in</button>
       </form>
-      <p class="muted">Repeated failures are rate limited per organization and address. Lost password: ask the operator for a new enrollment invite.</p>
+      <p class="muted">Repeated failures are rate limited per organization and per address. Lost password: ask the operator for a reset invite; it sets a new password and keeps your organization, nodes, and tokens.</p>
     </section>
 
     <footer><a href="/">Back to the console</a></footer>

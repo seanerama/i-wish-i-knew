@@ -104,6 +104,16 @@ test('IWIK_FEATURE_ENROLLMENT off (default): /enroll, /org, /console/login, admi
       payload: { name: 'Should Not Exist' },
     });
     assert.equal(admin.statusCode, 404);
+    // stage 11: the re-invite endpoint rides the same flag
+    const reinvite = await t.app.inject({
+      method: 'POST',
+      url: '/v1/admin/organizations/01ARZ3NDEKTSV4RRFFQ69G5N0D/invites',
+      headers: authHeader(OPERATOR_TOKEN),
+    });
+    assert.equal(reinvite.statusCode, 404);
+    assert.equal(reinvite.json<{ error: { code: string } }>().error.code, 'not_found');
+    const invites = await t.app.iwik.pool.query(`SELECT 1 FROM identity.invites`);
+    assert.equal(invites.rows.length, 0);
     const orgs = await t.app.iwik.pool.query(
       `SELECT 1 FROM identity.organizations WHERE name = $1`,
       ['Should Not Exist'],

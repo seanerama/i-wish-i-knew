@@ -220,9 +220,12 @@ export class CookieJar {
   private readonly cookies = new Map<string, string>();
   /** Client address presented to the app (rate limits key on it). */
   remoteAddress: string;
+  /** Extra headers on every request, e.g. X-Forwarded-For behind IWIK_TRUST_PROXY. */
+  headers: Record<string, string>;
 
-  constructor(remoteAddress = '127.0.0.1') {
+  constructor(remoteAddress = '127.0.0.1', headers: Record<string, string> = {}) {
     this.remoteAddress = remoteAddress;
+    this.headers = headers;
   }
 
   absorb(res: LightMyRequestResponse): void {
@@ -247,8 +250,11 @@ export class CookieJar {
   }
 
   header(): Record<string, string> {
-    if (this.cookies.size === 0) return {};
-    return { cookie: [...this.cookies].map(([k, v]) => `${k}=${v}`).join('; ') };
+    if (this.cookies.size === 0) return { ...this.headers };
+    return {
+      ...this.headers,
+      cookie: [...this.cookies].map(([k, v]) => `${k}=${v}`).join('; '),
+    };
   }
 
   /** The CSRF nonce the app expects in `_csrf` (the signed cookie's first segment). */
@@ -313,6 +319,49 @@ export async function createInvite(
   const body = res.json<{ org_id: string; invite_url: string }>();
   const path = body.invite_url.replace(/^https?:\/\/[^/]+/, '');
   return { ...body, invite_path: path };
+}
+
+/** Stage 11 operator re-invite: the raw response, so callers can assert on 401/404/409. */
+export async function reinvite(
+  t: TestApp,
+  orgId: string,
+  operatorToken: string = OPERATOR_TOKEN,
+): Promise<LightMyRequestResponse> {
+  return t.app.inject({
+    method: 'POST',
+    url: `/v1/admin/organizations/${orgId}/invites`,
+    headers: authHeader(operatorToken),
+  });
+}
+
+/** Re-invite an existing organization and return its one-time invite path. */
+export async function createResetInvite(
+  t: TestApp,
+  orgId: string,
+): Promise<{ org_id: string; kind: 'enroll' | 'reset'; invite_url: string; invite_path: string }> {
+  const res = await reinvite(t, orgId);
+  if (res.statusCode !== 201) throw new Error(`re-invite failed: ${res.statusCode} ${res.body}`);
+  const body = res.json<{ org_id: string; kind: 'enroll' | 'reset'; invite_url: string }>();
+  const path = body.invite_url.replace(/^https?:\/\/[^/]+/, '');
+  return { ...body, invite_path: path };
+}
+
+/** Accept a reset invite: new password (and the clauses, harmless when not asked); leaves the jar signed in. */
+export async function resetPassword(
+  t: TestApp,
+  jar: CookieJar,
+  invitePath: string,
+  password: string,
+): Promise<LightMyRequestResponse> {
+  const page = await browse(t, jar, invitePath);
+  if (page.statusCode !== 200) throw new Error(`reset page: ${page.statusCode}`);
+  return postForm(t, jar, invitePath, {
+    password,
+    password_confirm: password,
+    agree_terms: 'on',
+    agree_trust_boundary: 'on',
+    agree_reciprocity: 'on',
+  });
 }
 
 export interface EnrolledOrg {

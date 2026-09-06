@@ -117,7 +117,8 @@ export function buildOpenApi(): Record<string, unknown> {
         operatorToken: {
           type: 'http',
           scheme: 'bearer',
-          description: 'IWIK_OPERATOR_TOKEN; authorizes POST /v1/admin/organizations only',
+          description:
+            'IWIK_OPERATOR_TOKEN; authorizes the /v1/admin endpoints only and never grants evidence access',
         },
       },
       schemas: {
@@ -300,6 +301,30 @@ export function buildOpenApi(): Record<string, unknown> {
               [404, 'not_found (feature disabled)'],
               [409, 'name_taken'],
               [422, 'validation_failed'],
+            ),
+          },
+        },
+      },
+      '/v1/admin/organizations/{org_id}/invites': {
+        post: {
+          summary:
+            'Operator re-invite (stage 11, additive): a one-time reset invite for an existing organization',
+          description:
+            'Requires IWIK_FEATURE_ENROLLMENT=on (404 otherwise) and the operator token. ' +
+            'An enrolled organization gets a `reset` invite: accepting it at /enroll/<invite> sets a new ' +
+            'console password, keeps the display name, nodes, and tokens, and records a new agreement only ' +
+            'if the pilot terms version changed. An organization that never completed enrollment gets a ' +
+            'fresh `enroll` invite instead. Never creates a second organization. ' +
+            'The invite URL is returned exactly once; only its hash is stored.',
+          security: [{ operatorToken: [] }],
+          'x-scope': 'operator',
+          parameters: [{ name: 'org_id', in: 'path', required: true, schema: { type: 'string' } }],
+          responses: {
+            '201': { description: '{ org_id, kind: "reset" | "enroll", invite_url, expires_at }' },
+            ...errorResponses(
+              [401, 'unauthorized'],
+              [404, 'not_found (unknown organization, or feature disabled)'],
+              [409, 'invite_exists (an unexpired, unaccepted invite already exists)'],
             ),
           },
         },

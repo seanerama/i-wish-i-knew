@@ -7,7 +7,15 @@ import { test } from 'node:test';
 import type { FastifyInstance } from 'fastify';
 import { buildApp } from '../src/app.js';
 import { loadConfig } from '../src/config.js';
-import { DATABASE_URL, TEST_KEK, resetDatabase } from './helpers.js';
+import {
+  CookieJar,
+  DATABASE_URL,
+  TEST_KEK,
+  bootEnrollmentApp,
+  enrollOrganization,
+  loginOrganization,
+  resetDatabase,
+} from './helpers.js';
 
 const base = { DATABASE_URL, IWIK_KEK: '0'.repeat(64) };
 
@@ -71,5 +79,39 @@ test('IWIK_TRUST_PROXY=0 (and unset): X-Forwarded-For is ignored', async () => {
     } finally {
       await app.close();
     }
+  }
+});
+
+// Stage 11: both login windows key on `request.ip`, so behind one trusted
+// proxy hop the forwarded client is the bucket, not the proxy's own address.
+test('IWIK_TRUST_PROXY=1: the per-IP login window keys on the forwarded client, not the proxy', async () => {
+  const t = await bootEnrollmentApp({ env: { IWIK_TRUST_PROXY: '1' } });
+  try {
+    const org = await enrollOrganization(t, 'Proxied Org');
+    const proxy = '10.0.0.9';
+    // five different clients behind the proxy each fail once: none is blocked
+    for (let i = 1; i <= 5; i++) {
+      const jar = new CookieJar(proxy, { 'x-forwarded-for': `203.0.113.${i}` });
+      const res = await loginOrganization(t, jar, `Other Org ${i}`, 'wrong password here');
+      assert.equal(res.statusCode, 303, `client ${i}`);
+    }
+    const sixthClient = new CookieJar(proxy, { 'x-forwarded-for': '203.0.113.6' });
+    const ok = await loginOrganization(t, sixthClient, org.name, org.password);
+    assert.equal(ok.statusCode, 303);
+    assert.equal(ok.headers.location, '/org');
+
+    // one client, five failures under different names: blocked even when it
+    // arrives through a different proxy socket
+    for (let i = 1; i <= 5; i++) {
+      const jar = new CookieJar(proxy, { 'x-forwarded-for': '198.51.100.7' });
+      const res = await loginOrganization(t, jar, `Other Org ${i}`, 'wrong password here');
+      assert.equal(res.statusCode, 303, `attempt ${i}`);
+    }
+    const blocked = new CookieJar('10.0.0.10', { 'x-forwarded-for': '198.51.100.7' });
+    const sixth = await loginOrganization(t, blocked, org.name, org.password);
+    assert.equal(sixth.statusCode, 429);
+    assert.equal(sixth.json<{ error: { code: string } }>().error.code, 'rate_limited');
+  } finally {
+    await t.app.close();
   }
 });
