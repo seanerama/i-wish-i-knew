@@ -37,6 +37,45 @@
       "entity": "AnswerReceipt",
       "valid": false,
       "expect": [{ "path": "/result/contradictions/0", "rule": "additionalProperties" }]
+    },
+    { "file": "challenge.valid.json", "entity": "Challenge", "valid": true },
+    {
+      "file": "challenge.free-text-grounds.json",
+      "entity": "Challenge",
+      "valid": false,
+      "expect": [
+        { "path": "/grounds", "rule": "enum" },
+        { "path": "/statement", "rule": "additionalProperties" }
+      ]
+    },
+    { "file": "outcome.valid.json", "entity": "Outcome", "valid": true },
+    {
+      "file": "outcome.observation-rewrites-prediction.json",
+      "entity": "Outcome",
+      "valid": false,
+      "expect": [
+        { "path": "/observed/result", "rule": "enum" },
+        { "path": "/observed", "rule": "additionalProperties" },
+        { "path": "/observed/environment_changed", "rule": "required" }
+      ]
+    },
+    { "file": "prediction.valid.json", "entity": "Prediction", "valid": true },
+    { "file": "claim.valid.json", "entity": "Claim", "valid": true },
+    {
+      "file": "claim.lists-supporting-run-ids.json",
+      "entity": "Claim",
+      "valid": false,
+      "expect": [{ "path": "/supporting_runs", "rule": "type" }]
+    },
+    { "file": "relationship.valid.json", "entity": "Relationship", "valid": true },
+    {
+      "file": "relationship.free-text-rationale.json",
+      "entity": "Relationship",
+      "valid": false,
+      "expect": [
+        { "path": "/kind", "rule": "enum" },
+        { "path": "/rationale", "rule": "enum" }
+      ]
     }
   ]
 }

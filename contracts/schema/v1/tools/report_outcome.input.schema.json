@@ -25,7 +25,28 @@
       "format": "date-time",
       "description": "RFC 3339 UTC timestamp",
       "type": "string"
+    },
+    "prediction_id": {
+      "pattern": "^[0-9A-HJKMNP-TV-Z]{26}$",
+      "description": "ULID identifier",
+      "type": "string"
+    },
+    "result": {
+      "type": "string",
+      "enum": [
+        "met",
+        "not_met",
+        "indeterminate"
+      ]
+    },
+    "environment_changed": {
+      "type": "boolean"
+    },
+    "evaluation_run_id": {
+      "pattern": "^[0-9A-HJKMNP-TV-Z]{26}$",
+      "description": "ULID identifier",
+      "type": "string"
     }
   },
-  "description": "Report an observed outcome against a prior released prediction (milestone 0.3). Scope: publish; side effect: remote_write."
+  "description": "Report the observed outcome of a prediction you registered earlier with register_prediction (prediction_id). result is met, not_met, or indeterminate; environment_changed records that the environment moved and is kept separate from the result. The stored prediction cannot be altered. receipt_id is the receipt the prediction was based on. Scope: publish; side effect: remote_write."
 }

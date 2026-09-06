@@ -20,6 +20,16 @@ import {
   Ulid,
 } from '../common.js';
 import { ContextValue } from '../context.js';
+import {
+  ChallengeDirection,
+  ChallengeGrounds,
+  ChallengeStatus,
+  EvaluationRule,
+  OutcomeResult,
+  PredictionTarget,
+  VocabularyKey,
+} from '../ledger.js';
+import { IsoDate } from '../answer-receipt.js';
 import { ProtocolVersion } from '../protocol-version.js';
 import { ExecutionStatus, Run, RunAccounting, SharingPolicy, TargetKind } from '../run.js';
 import { toolOutput } from './envelope.js';
@@ -301,7 +311,8 @@ export const tools = {
     ),
   }),
   challenge_finding: define({
-    description: 'File a structured challenge against a released finding (milestone 0.3).',
+    description:
+      'File a structured challenge against a released finding: a receipt of your organization, or (claim_id) one claim released on it. grounds.kind is one of method, context_mismatch, data_error, replication_failed, affiliation; grounds.rationale is a short note (at most 500 characters) seen by the operator only. Rate-limited to 5 per organization per day.',
     scope: 'publish',
     side_effect: 'remote_write',
     input: Type.Object(
@@ -311,16 +322,43 @@ export const tools = {
           { kind: Type.String({ minLength: 1 }), rationale: Type.String({ minLength: 1 }) },
           { additionalProperties: false },
         ),
+        // Stage 10 (additive): target one claim released on the receipt
+        // instead of the whole receipt, and say what is objected to in the
+        // pack's fixed vocabulary.
+        claim_id: Type.Optional(Ulid),
+        statement: Type.Optional(
+          Type.Object(
+            {
+              claim: Type.Optional(VocabularyKey),
+              metric: Type.Optional(VocabularyKey),
+              statistic: Type.Optional(VocabularyKey),
+              context_key: Type.Optional(ContextKey),
+              direction: Type.Optional(ChallengeDirection),
+              replication_run_id: Type.Optional(Ulid),
+            },
+            { additionalProperties: false },
+          ),
+        ),
       },
       { additionalProperties: false },
     ),
     output: toolOutput(
-      Type.Object({ challenge_id: Ulid }, { additionalProperties: false }),
+      Type.Object(
+        {
+          challenge_id: Ulid,
+          // Stage 10 (additive).
+          status: Type.Optional(ChallengeStatus),
+          grounds: Type.Optional(ChallengeGrounds),
+          filed_at: Type.Optional(Timestamp),
+        },
+        { additionalProperties: false },
+      ),
       'POST /v1/challenges',
     ),
   }),
   report_outcome: define({
-    description: 'Report an observed outcome against a prior released prediction (milestone 0.3).',
+    description:
+      'Report the observed outcome of a prediction you registered earlier with register_prediction (prediction_id). result is met, not_met, or indeterminate; environment_changed records that the environment moved and is kept separate from the result. The stored prediction cannot be altered. receipt_id is the receipt the prediction was based on.',
     scope: 'publish',
     side_effect: 'remote_write',
     input: Type.Object(
@@ -328,11 +366,28 @@ export const tools = {
         receipt_id: Ulid,
         observation: OpaqueObject("What was observed, in the protocol's vocabulary"),
         observed_at: Timestamp,
+        // Stage 10 (additive): the prediction being reported on and the
+        // structured observation. When absent they are read from
+        // `observation.prediction_id`, `.result`, `.environment_changed`.
+        prediction_id: Type.Optional(Ulid),
+        result: Type.Optional(OutcomeResult),
+        environment_changed: Type.Optional(Type.Boolean()),
+        evaluation_run_id: Type.Optional(Ulid),
       },
       { additionalProperties: false },
     ),
     output: toolOutput(
-      Type.Object({ outcome_id: Ulid }, { additionalProperties: false }),
+      Type.Object(
+        {
+          outcome_id: Ulid,
+          // Stage 10 (additive).
+          prediction_id: Type.Optional(Ulid),
+          result: Type.Optional(OutcomeResult),
+          environment_changed: Type.Optional(Type.Boolean()),
+          recorded_at: Type.Optional(Timestamp),
+        },
+        { additionalProperties: false },
+      ),
       'POST /v1/outcomes',
     ),
   }),
@@ -365,6 +420,37 @@ export const tools = {
         { additionalProperties: false },
       ),
       'POST /v1/withdrawals',
+    ),
+  }),
+  // Stage 10 (additive; new tools may be added): the first half of
+  // report_outcome. A prediction is registered BEFORE acting on a released
+  // answer; the outcome is reported later against its prediction_id.
+  register_prediction: define({
+    description:
+      'Register a prediction before acting on a released answer: which claim (and metric, statistic, threshold) of the receipt you rely on, by when it will be observable (horizon, a date), an optional probability, and the rule that will judge it. Returns prediction_id for report_outcome. The prediction cannot be changed afterwards.',
+    scope: 'publish',
+    side_effect: 'remote_write',
+    input: Type.Object(
+      {
+        receipt_id: Ulid,
+        target: PredictionTarget,
+        horizon: IsoDate,
+        probability: Type.Optional(Type.Number({ minimum: 0, maximum: 1 })),
+        evaluation_rule: EvaluationRule,
+      },
+      { additionalProperties: false },
+    ),
+    output: toolOutput(
+      Type.Object(
+        {
+          prediction_id: Ulid,
+          registered_at: Timestamp,
+          horizon: IsoDate,
+          evaluation_rule: EvaluationRule,
+        },
+        { additionalProperties: false },
+      ),
+      'POST /v1/outcomes (prediction step)',
     ),
   }),
 } as const;

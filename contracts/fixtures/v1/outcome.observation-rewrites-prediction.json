@@ -1,0 +1,18 @@
+{
+  "outcome_id": "01ARZ3NDEKTSV4RRFFQ69G50C2",
+  "prediction": {
+    "prediction_id": "01ARZ3NDEKTSV4RRFFQ69G5PD2",
+    "based_on_receipt_id": "01ARZ3NDEKTSV4RRFFQ69G5RC1",
+    "protocol_ref": "inference-api/latency@1",
+    "target": { "claim": "latency_distribution", "comparator": "below", "value": 300 },
+    "horizon": "2026-10-01",
+    "evaluation_rule": "own_measurement",
+    "registered_at": "2026-09-06T10:00:00Z"
+  },
+  "observed": {
+    "observed_at": "2026-09-28T08:00:00Z",
+    "result": "prediction was wrong but the environment changed",
+    "target": { "claim": "latency_distribution", "comparator": "below", "value": 900 }
+  },
+  "recorded_at": "2026-09-28T08:05:00Z"
+}

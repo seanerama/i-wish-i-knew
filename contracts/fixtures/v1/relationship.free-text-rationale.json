@@ -1,0 +1,9 @@
+{
+  "relationship_id": "01ARZ3NDEKTSV4RRFFQ69G5RM2",
+  "source_claim_id": "01ARZ3NDEKTSV4RRFFQ69G5CM3",
+  "target_claim_id": "01ARZ3NDEKTSV4RRFFQ69G5CM1",
+  "kind": "disputes",
+  "rationale": "Acme Corp's runs came from a warm cache on 10.0.0.7",
+  "revision": 43,
+  "created_at": "2026-09-07T09:30:00Z"
+}

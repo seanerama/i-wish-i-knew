@@ -1,0 +1,82 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:iwik:contracts:v1:tools:register_prediction:input",
+  "title": "register_prediction input",
+  "additionalProperties": false,
+  "type": "object",
+  "required": [
+    "receipt_id",
+    "target",
+    "horizon",
+    "evaluation_rule"
+  ],
+  "properties": {
+    "receipt_id": {
+      "pattern": "^[0-9A-HJKMNP-TV-Z]{26}$",
+      "description": "ULID identifier",
+      "type": "string"
+    },
+    "target": {
+      "additionalProperties": false,
+      "type": "object",
+      "required": [
+        "claim"
+      ],
+      "properties": {
+        "claim": {
+          "pattern": "^[a-z][a-z0-9_]*$",
+          "maxLength": 64,
+          "description": "Fixed-vocabulary key from a pack (claim, metric, or statistic name)",
+          "type": "string"
+        },
+        "metric": {
+          "pattern": "^[a-z][a-z0-9_]*$",
+          "maxLength": 64,
+          "description": "Fixed-vocabulary key from a pack (claim, metric, or statistic name)",
+          "type": "string"
+        },
+        "statistic": {
+          "pattern": "^[a-z][a-z0-9_]*$",
+          "maxLength": 64,
+          "description": "Fixed-vocabulary key from a pack (claim, metric, or statistic name)",
+          "type": "string"
+        },
+        "comparator": {
+          "type": "string",
+          "enum": [
+            "below",
+            "above",
+            "within"
+          ]
+        },
+        "value": {
+          "type": "number"
+        },
+        "unit": {
+          "maxLength": 16,
+          "pattern": "^[a-z%/0-9_]+$",
+          "type": "string"
+        }
+      }
+    },
+    "horizon": {
+      "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}$",
+      "type": "string"
+    },
+    "probability": {
+      "minimum": 0,
+      "maximum": 1,
+      "type": "number"
+    },
+    "evaluation_rule": {
+      "type": "string",
+      "enum": [
+        "own_measurement",
+        "cooperative_requery",
+        "operational_observation"
+      ],
+      "description": "How the outcome will be judged, fixed before it is known"
+    }
+  },
+  "description": "Register a prediction before acting on a released answer: which claim (and metric, statistic, threshold) of the receipt you rely on, by when it will be observable (horizon, a date), an optional probability, and the rule that will judge it. Returns prediction_id for report_outcome. The prediction cannot be changed afterwards. Scope: publish; side effect: remote_write."
+}

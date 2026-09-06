@@ -8,7 +8,8 @@ import { ArtifactCommitment } from './artifact-commitment.js';
 import { ContextField, ContextProfile } from './context.js';
 import { ProtocolVersion } from './protocol-version.js';
 import { Run } from './run.js';
-import { Challenge, Claim, Investigation, Outcome, Relationship } from './stubs.js';
+import { Challenge, Claim, Outcome, Prediction, Relationship } from './ledger.js';
+import { Investigation } from './stubs.js';
 
 export * from './common.js';
 export * from './context.js';
@@ -17,6 +18,7 @@ export * from './artifact-commitment.js';
 export * from './run.js';
 export * from './answer-receipt.js';
 export * from './stubs.js';
+export * from './ledger.js';
 
 export const entities = {
   ProtocolVersion,
@@ -30,6 +32,8 @@ export const entities = {
   AnswerReceipt,
   Challenge,
   Outcome,
+  // Stage 10 (additive): the registered half of an Outcome, on its own.
+  Prediction,
 } as const satisfies Record<string, TSchema>;
 
 export type EntityName = keyof typeof entities;

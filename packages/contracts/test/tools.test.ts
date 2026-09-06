@@ -1,4 +1,5 @@
-// agent-tools v1: the ten tool names of contracts/agent-tools.md, one input
+// agent-tools v1: the ten tool names of contracts/agent-tools.md plus the
+// stage 10 addition (register_prediction; new tools are additive), one input
 // and one output schema each, committed under contracts/schema/v1/tools/, and
 // a validator that never echoes values.
 import assert from 'node:assert/strict';
@@ -24,9 +25,11 @@ const CONTRACT_TOOLS = [
   'challenge_finding',
   'report_outcome',
   'withdraw_contribution',
+  // stage 10 (additive): registered before an outcome is known
+  'register_prediction',
 ];
 
-test('exactly the ten contract tools, in contract order', () => {
+test('the ten contract tools in contract order, then the additive stage 10 tool', () => {
   assert.deepEqual(toolNames, CONTRACT_TOOLS);
   for (const name of toolNames) {
     assert.equal(tools[name].input.type, 'object');

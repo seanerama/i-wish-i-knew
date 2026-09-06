@@ -2,15 +2,143 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "urn:iwik:contracts:v1:Claim",
   "title": "Claim",
-  "description": "Claim: assertion with derivation and supporting runs (stub)",
+  "additionalProperties": false,
+  "description": "Claim: an assertion with derivation, supporting evidence as bands, hypothesis status, uncertainty, limitations",
   "type": "object",
   "required": [
-    "claim_id"
+    "claim_id",
+    "protocol_ref",
+    "claim",
+    "status",
+    "origin",
+    "corroboration",
+    "derivation",
+    "created_at"
   ],
   "properties": {
     "claim_id": {
       "pattern": "^[0-9A-HJKMNP-TV-Z]{26}$",
       "description": "ULID identifier",
+      "type": "string"
+    },
+    "receipt_id": {
+      "pattern": "^[0-9A-HJKMNP-TV-Z]{26}$",
+      "description": "ULID identifier",
+      "type": "string"
+    },
+    "protocol_ref": {
+      "pattern": "^[a-z0-9][a-z0-9-]*/[a-z0-9][a-z0-9-]*@[1-9][0-9]*$",
+      "description": "Protocol reference: <pack>/<protocol>@<major>",
+      "type": "string"
+    },
+    "claim": {
+      "pattern": "^[a-z][a-z0-9_]*$",
+      "maxLength": 64,
+      "description": "Fixed-vocabulary key from a pack (claim, metric, or statistic name)",
+      "type": "string"
+    },
+    "statement": {
+      "type": "string"
+    },
+    "status": {
+      "type": "string",
+      "enum": [
+        "proposed",
+        "supported",
+        "experimentally_tested",
+        "independently_reproduced",
+        "contradicted",
+        "rejected"
+      ],
+      "description": "Hypothesis state (brief §5)"
+    },
+    "origin": {
+      "type": "string",
+      "enum": [
+        "measured",
+        "reported",
+        "inferred",
+        "published"
+      ]
+    },
+    "corroboration": {
+      "type": "string",
+      "enum": [
+        "unreplicated",
+        "independently_replicated",
+        "disputed"
+      ]
+    },
+    "derivation": {
+      "additionalProperties": false,
+      "type": "object",
+      "required": [
+        "method"
+      ],
+      "properties": {
+        "method": {
+          "type": "string",
+          "enum": [
+            "cooperative_release",
+            "challenge"
+          ],
+          "description": "How the claim came to exist: released from a cohort, or asserted by a challenge"
+        },
+        "calculation_version": {
+          "minLength": 1,
+          "type": "string"
+        },
+        "policy_version": {
+          "minLength": 1,
+          "type": "string"
+        },
+        "evidence_revision": {
+          "minimum": 0,
+          "type": "integer"
+        },
+        "orgs": {
+          "pattern": "^(<[0-9]+|[0-9]+-[0-9]+|[0-9]+\\+)$",
+          "description": "Count band, e.g. `3-5`, `<3`, `10+`",
+          "type": "string"
+        },
+        "runs": {
+          "pattern": "^(<[0-9]+|[0-9]+-[0-9]+|[0-9]+\\+)$",
+          "description": "Count band, e.g. `3-5`, `<3`, `10+`",
+          "type": "string"
+        },
+        "challenge_id": {
+          "pattern": "^[0-9A-HJKMNP-TV-Z]{26}$",
+          "description": "ULID identifier",
+          "type": "string"
+        },
+        "grounds": {
+          "minLength": 1,
+          "type": "string"
+        }
+      }
+    },
+    "supporting_runs": {
+      "pattern": "^(<[0-9]+|[0-9]+-[0-9]+|[0-9]+\\+)$",
+      "description": "Count band, e.g. `3-5`, `<3`, `10+`",
+      "type": "string"
+    },
+    "uncertainty": {
+      "type": "string"
+    },
+    "limitations": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "created_at": {
+      "format": "date-time",
+      "description": "RFC 3339 UTC timestamp",
+      "type": "string"
+    },
+    "updated_at": {
+      "format": "date-time",
+      "description": "RFC 3339 UTC timestamp",
       "type": "string"
     }
   }

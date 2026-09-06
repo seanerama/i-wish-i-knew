@@ -31,7 +31,54 @@
           "type": "string"
         }
       }
+    },
+    "claim_id": {
+      "pattern": "^[0-9A-HJKMNP-TV-Z]{26}$",
+      "description": "ULID identifier",
+      "type": "string"
+    },
+    "statement": {
+      "additionalProperties": false,
+      "type": "object",
+      "properties": {
+        "claim": {
+          "pattern": "^[a-z][a-z0-9_]*$",
+          "maxLength": 64,
+          "description": "Fixed-vocabulary key from a pack (claim, metric, or statistic name)",
+          "type": "string"
+        },
+        "metric": {
+          "pattern": "^[a-z][a-z0-9_]*$",
+          "maxLength": 64,
+          "description": "Fixed-vocabulary key from a pack (claim, metric, or statistic name)",
+          "type": "string"
+        },
+        "statistic": {
+          "pattern": "^[a-z][a-z0-9_]*$",
+          "maxLength": 64,
+          "description": "Fixed-vocabulary key from a pack (claim, metric, or statistic name)",
+          "type": "string"
+        },
+        "context_key": {
+          "pattern": "^[a-z][a-z0-9_]*(\\.[a-z][a-z0-9_]*)*$",
+          "description": "Dotted lowercase context key",
+          "type": "string"
+        },
+        "direction": {
+          "type": "string",
+          "enum": [
+            "higher",
+            "lower",
+            "different"
+          ]
+        },
+        "replication_run_id": {
+          "pattern": "^[0-9A-HJKMNP-TV-Z]{26}$",
+          "description": "ULID identifier",
+          "type": "string"
+        }
+      }
     }
   },
-  "description": "File a structured challenge against a released finding (milestone 0.3). Scope: publish; side effect: remote_write."
+  "description": "File a structured challenge against a released finding: a receipt of your organization, or (claim_id) one claim released on it. grounds.kind is one of method, context_mismatch, data_error, replication_failed, affiliation; grounds.rationale is a short note (at most 500 characters) seen by the operator only. Rate-limited to 5 per organization per day. Scope: publish; side effect: remote_write."
 }

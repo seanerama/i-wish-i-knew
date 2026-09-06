@@ -1,0 +1,27 @@
+{
+  "outcome_id": "01ARZ3NDEKTSV4RRFFQ69G50C1",
+  "prediction": {
+    "prediction_id": "01ARZ3NDEKTSV4RRFFQ69G5PD1",
+    "based_on_receipt_id": "01ARZ3NDEKTSV4RRFFQ69G5RC1",
+    "protocol_ref": "inference-api/latency@1",
+    "target": {
+      "claim": "latency_distribution",
+      "metric": "ttft_ms",
+      "statistic": "p95",
+      "comparator": "below",
+      "value": 300,
+      "unit": "ms"
+    },
+    "horizon": "2026-10-01",
+    "probability": 0.7,
+    "evaluation_rule": "own_measurement",
+    "registered_at": "2026-09-06T10:00:00Z"
+  },
+  "observed": {
+    "observed_at": "2026-09-28T08:00:00Z",
+    "result": "not_met",
+    "environment_changed": true,
+    "evaluation_run_id": "01ARZ3NDEKTSV4RRFFQ69G5RN2"
+  },
+  "recorded_at": "2026-09-28T08:05:00Z"
+}

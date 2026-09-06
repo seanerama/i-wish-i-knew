@@ -1,0 +1,10 @@
+{
+  "challenge_id": "01ARZ3NDEKTSV4RRFFQ69G5CH2",
+  "target": { "kind": "receipt", "id": "01ARZ3NDEKTSV4RRFFQ69G5RC1" },
+  "protocol_ref": "inference-api/latency@1",
+  "grounds": "the numbers look wrong to me",
+  "statement": { "objection": "p95 was 900ms on host api-prod-3.internal" },
+  "evaluation_method": "operator_review",
+  "status": "open",
+  "filed_at": "2026-09-06T10:00:00Z"
+}

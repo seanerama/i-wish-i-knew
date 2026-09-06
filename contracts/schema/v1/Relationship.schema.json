@@ -2,12 +2,17 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "urn:iwik:contracts:v1:Relationship",
   "title": "Relationship",
-  "description": "Relationship between two claims (stub)",
+  "additionalProperties": false,
+  "description": "Relationship between two claims, with a fixed-vocabulary rationale and revision",
   "type": "object",
   "required": [
     "relationship_id",
     "source_claim_id",
-    "target_claim_id"
+    "target_claim_id",
+    "kind",
+    "rationale",
+    "revision",
+    "created_at"
   ],
   "properties": {
     "relationship_id": {
@@ -23,6 +28,47 @@
     "target_claim_id": {
       "pattern": "^[0-9A-HJKMNP-TV-Z]{26}$",
       "description": "ULID identifier",
+      "type": "string"
+    },
+    "kind": {
+      "type": "string",
+      "enum": [
+        "supports",
+        "contradicts",
+        "reproduces",
+        "narrows",
+        "supersedes"
+      ],
+      "description": "How the source claim relates to the target claim"
+    },
+    "rationale": {
+      "type": "string",
+      "enum": [
+        "method_error",
+        "context_mismatch",
+        "data_error",
+        "replication_failed",
+        "affiliation",
+        "insufficient_grounds",
+        "newer_evidence",
+        "protocol_superseded",
+        "independent_replication",
+        "recalculation"
+      ],
+      "description": "Rationale for the relationship (fixed vocabulary)"
+    },
+    "revision": {
+      "minimum": 0,
+      "type": "integer"
+    },
+    "challenge_id": {
+      "pattern": "^[0-9A-HJKMNP-TV-Z]{26}$",
+      "description": "ULID identifier",
+      "type": "string"
+    },
+    "created_at": {
+      "format": "date-time",
+      "description": "RFC 3339 UTC timestamp",
       "type": "string"
     }
   }

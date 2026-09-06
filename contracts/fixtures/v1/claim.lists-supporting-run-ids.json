@@ -1,0 +1,12 @@
+{
+  "claim_id": "01ARZ3NDEKTSV4RRFFQ69G5CM2",
+  "receipt_id": "01ARZ3NDEKTSV4RRFFQ69G5RC1",
+  "protocol_ref": "inference-api/latency@1",
+  "claim": "latency_distribution",
+  "status": "supported",
+  "origin": "measured",
+  "corroboration": "unreplicated",
+  "derivation": { "method": "cooperative_release", "evidence_revision": 42 },
+  "supporting_runs": ["01ARZ3NDEKTSV4RRFFQ69G5RN1", "01ARZ3NDEKTSV4RRFFQ69G5RN9"],
+  "created_at": "2026-09-06T10:00:00Z"
+}

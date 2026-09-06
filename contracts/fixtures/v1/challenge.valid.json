@@ -1,0 +1,21 @@
+{
+  "challenge_id": "01ARZ3NDEKTSV4RRFFQ69G5CH1",
+  "target": { "kind": "claim", "id": "01ARZ3NDEKTSV4RRFFQ69G5CM1" },
+  "protocol_ref": "inference-api/latency@1",
+  "grounds": "replication_failed",
+  "statement": {
+    "claim": "latency_distribution",
+    "metric": "ttft_ms",
+    "statistic": "p95",
+    "direction": "higher",
+    "replication_run_id": "01ARZ3NDEKTSV4RRFFQ69G5RN1",
+    "note": "Our own run under the same filters measured a p95 well above the released spread."
+  },
+  "evaluation_method": "operator_review",
+  "status": "resolved",
+  "resolution": "upheld",
+  "relationship_id": "01ARZ3NDEKTSV4RRFFQ69G5RM1",
+  "resolved_revision": 43,
+  "filed_at": "2026-09-06T10:00:00Z",
+  "resolved_at": "2026-09-07T09:30:00Z"
+}
