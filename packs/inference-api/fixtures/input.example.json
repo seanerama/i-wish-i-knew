@@ -1,0 +1,20 @@
+{
+  "plan_id": "01ARZ3NDEKTSV4RRFFQ69G5PLN",
+  "protocol_ref": "inference-api/latency@1",
+  "target": {
+    "url": "http://127.0.0.1:8089",
+    "model": "stub-model"
+  },
+  "context": {
+    "model.requested": "stub-model",
+    "concurrency": 1,
+    "retry_policy": "none",
+    "cache_disabled": true,
+    "client_region": "local"
+  },
+  "budget": {
+    "planned": 20,
+    "max_tokens": 64
+  },
+  "timeout_ms": 30000
+}

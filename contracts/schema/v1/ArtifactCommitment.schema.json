@@ -1,0 +1,48 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:iwik:contracts:v1:ArtifactCommitment",
+  "title": "ArtifactCommitment",
+  "additionalProperties": false,
+  "description": "Digest and access policy for an artifact retained in the local vault",
+  "type": "object",
+  "required": [
+    "digest",
+    "kind",
+    "size_bytes",
+    "access"
+  ],
+  "properties": {
+    "digest": {
+      "pattern": "^sha256:[0-9a-f]{64}$",
+      "description": "SHA-256 digest, `sha256:<hex>`",
+      "type": "string"
+    },
+    "kind": {
+      "type": "string",
+      "enum": [
+        "attempts",
+        "stdout",
+        "stderr",
+        "harness_output",
+        "file"
+      ],
+      "description": "What the retained artifact is"
+    },
+    "size_bytes": {
+      "minimum": 0,
+      "type": "integer"
+    },
+    "media_type": {
+      "type": "string"
+    },
+    "access": {
+      "type": "string",
+      "enum": [
+        "vault_only",
+        "on_request",
+        "cooperative"
+      ],
+      "description": "Access policy: vault_only never leaves the node; on_request is disclosed only to a challenge; cooperative may be shared with the cohort"
+    }
+  }
+}

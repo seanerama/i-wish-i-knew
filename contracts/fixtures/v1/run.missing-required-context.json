@@ -1,0 +1,36 @@
+{
+  "run_id": "01ARZ3NDEKTSV4RRFFQ69G5FAV",
+  "attempt_id": "01ARZ3NDEKTSV4RRFFQ69G5FB0",
+  "node_id": "01ARZ3NDEKTSV4RRFFQ69G5N0D",
+  "protocol_ref": "inference-api/latency@1",
+  "protocol_digest": "sha256:3f1c9a0e5b7d2c4a6e8f0b1d3c5a7e9f2b4d6c8a0e1f3b5d7c9a2e4f6b8d0c1a",
+  "harness_digest": "sha256:9b2e4d6c8a0f1e3b5d7c9a2e4f6b8d0c1a3f5e7d9b1c3a5e7f9b2d4c6a8e0f1b",
+  "started_at": "2026-09-05T12:00:00Z",
+  "ended_at": "2026-09-05T12:00:04Z",
+  "target": {
+    "kind": "fixture",
+    "label_digest": "sha256:5a7e9f2b4d6c8a0e1f3b5d7c9a2e4f6b8d0c1a3f5e7d9b1c3a5e7f9b2d4c6a8e"
+  },
+  "execution_status": "succeeded",
+  "accounting": {
+    "planned": 20,
+    "attempted": 20,
+    "succeeded": 18,
+    "failed": 2,
+    "excluded": 0,
+    "unobserved": 0
+  },
+  "result": {
+    "protocol_ref": "inference-api/latency@1"
+  },
+  "result_schema_digest": "sha256:7c9a2e4f6b8d0c1a3f5e7d9b1c3a5e7f9b2d4c6a8e0f1b3d5c7a9e2f4b6d8c0a",
+  "artifacts": [],
+  "origin": "measured",
+  "corroboration": "unreplicated",
+  "submission": {
+    "signed_at": "2026-09-05T12:00:05Z",
+    "key_id": "node-key-1",
+    "signature": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA==",
+    "sharing_policy": "cooperative"
+  }
+}

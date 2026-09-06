@@ -1,0 +1,31 @@
+{
+  "$comment": "Conformance suite for evidence-envelope v1. Every fixture file in this directory must be listed. `expect` lists {path, rule} issues that a conforming validator must report for an invalid fixture (it may report more).",
+  "fixtures": [
+    { "file": "run.valid.json", "entity": "Run", "valid": true },
+    {
+      "file": "run.missing-required-context.json",
+      "entity": "Run",
+      "valid": false,
+      "expect": [{ "path": "/context", "rule": "required" }]
+    },
+    {
+      "file": "run.bad-accounting.json",
+      "entity": "Run",
+      "valid": false,
+      "expect": [{ "path": "/accounting", "rule": "accounting_reconciles" }]
+    },
+    {
+      "file": "run.excluded-without-reason.json",
+      "entity": "Run",
+      "valid": false,
+      "expect": [{ "path": "/exclusion_reason", "rule": "required" }]
+    },
+    { "file": "receipt.valid.json", "entity": "AnswerReceipt", "valid": true },
+    {
+      "file": "receipt.leaks-other-org-run.json",
+      "entity": "AnswerReceipt",
+      "valid": false,
+      "expect": [{ "path": "", "rule": "additionalProperties" }]
+    }
+  ]
+}

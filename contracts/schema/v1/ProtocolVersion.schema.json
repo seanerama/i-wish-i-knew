@@ -1,0 +1,102 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:iwik:contracts:v1:ProtocolVersion",
+  "title": "ProtocolVersion",
+  "additionalProperties": false,
+  "description": "Immutable procedure identity: ref, digests, required context, permitted claims, compatibility rules",
+  "type": "object",
+  "required": [
+    "ref",
+    "protocol_digest",
+    "harness_digest",
+    "status",
+    "kind",
+    "required_context",
+    "permitted_claims",
+    "compatibility",
+    "context_schema_digest",
+    "result_schema_digest"
+  ],
+  "properties": {
+    "ref": {
+      "pattern": "^[a-z0-9][a-z0-9-]*/[a-z0-9][a-z0-9-]*@[1-9][0-9]*$",
+      "description": "Protocol reference: <pack>/<protocol>@<major>",
+      "type": "string"
+    },
+    "protocol_digest": {
+      "pattern": "^sha256:[0-9a-f]{64}$",
+      "description": "SHA-256 digest, `sha256:<hex>`",
+      "type": "string"
+    },
+    "harness_digest": {
+      "pattern": "^sha256:[0-9a-f]{64}$",
+      "description": "SHA-256 digest, `sha256:<hex>`",
+      "type": "string"
+    },
+    "status": {
+      "type": "string",
+      "enum": [
+        "draft",
+        "reviewed",
+        "accepted",
+        "superseded",
+        "deprecated"
+      ],
+      "description": "Registry lifecycle state"
+    },
+    "kind": {
+      "type": "string",
+      "enum": [
+        "controlled",
+        "observational"
+      ],
+      "description": "Sampling method; survives ingestion"
+    },
+    "required_context": {
+      "type": "array",
+      "items": {
+        "pattern": "^[a-z][a-z0-9_]*(\\.[a-z][a-z0-9_]*)*$",
+        "description": "Dotted lowercase context key",
+        "type": "string"
+      }
+    },
+    "permitted_claims": {
+      "type": "array",
+      "items": {
+        "pattern": "^[a-z][a-z0-9_]*$",
+        "type": "string"
+      }
+    },
+    "compatibility": {
+      "additionalProperties": false,
+      "type": "object",
+      "required": [
+        "harness_digests"
+      ],
+      "properties": {
+        "harness_digests": {
+          "description": "Harness digests the runner may execute for this version",
+          "type": "array",
+          "items": {
+            "pattern": "^sha256:[0-9a-f]{64}$",
+            "description": "SHA-256 digest, `sha256:<hex>`",
+            "type": "string"
+          }
+        },
+        "notes": {
+          "type": "string"
+        }
+      }
+    },
+    "context_schema_digest": {
+      "pattern": "^sha256:[0-9a-f]{64}$",
+      "description": "SHA-256 digest, `sha256:<hex>`",
+      "type": "string"
+    },
+    "result_schema_digest": {
+      "pattern": "^sha256:[0-9a-f]{64}$",
+      "description": "SHA-256 digest, `sha256:<hex>`",
+      "type": "string"
+    }
+  }
+}

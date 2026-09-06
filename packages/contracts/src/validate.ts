@@ -1,0 +1,109 @@
+// Validation against the v1 envelope schemas with Ajv (draft 2020-12).
+//
+// `validate(entity, value)` returns `{ ok, errors: [{ path, rule }] }` and
+// never echoes submitted values: `path` is a JSON pointer into the instance
+// and `rule` is the schema keyword (or named semantic rule) that failed.
+// This is the same shape the member-api error envelope carries.
+import { Ajv2020 } from 'ajv/dist/2020.js';
+import type { ErrorObject, ValidateFunction } from 'ajv';
+import addFormatsModule from 'ajv-formats';
+import { schemaDocument, schemaId } from './schema.js';
+import type { EntityName, Run } from './v1/index.js';
+import { entityNames } from './v1/index.js';
+
+export interface ValidationIssue {
+  /** JSON pointer to the offending location in the instance. */
+  path: string;
+  /** Schema keyword or named semantic rule, never a value. */
+  rule: string;
+}
+
+export interface ValidationResult {
+  ok: boolean;
+  errors: ValidationIssue[];
+}
+
+const ajv = new Ajv2020({
+  // Strict everywhere except `strictRequired`, which rejects the legitimate
+  // `if/then: { required: [...] }` conditional on Run.exclusion_reason.
+  strictSchema: true,
+  strictTypes: true,
+  strictTuples: true,
+  strictRequired: false,
+  allErrors: true,
+  validateFormats: true,
+});
+// ajv-formats is a CommonJS module; under NodeNext its default import is the
+// module namespace and the plugin function sits on `.default`.
+addFormatsModule.default(ajv);
+for (const entity of entityNames) {
+  ajv.addSchema(schemaDocument(entity));
+}
+
+const compiled = new Map<EntityName, ValidateFunction>();
+
+function validatorFor(entity: EntityName): ValidateFunction {
+  const cached = compiled.get(entity);
+  if (cached !== undefined) return cached;
+  const found = ajv.getSchema(schemaId(entity));
+  if (found === undefined) throw new Error(`no schema registered for ${entity}`);
+  const fn = found as ValidateFunction;
+  compiled.set(entity, fn);
+  return fn;
+}
+
+function toIssue(error: ErrorObject): ValidationIssue {
+  let path = error.instancePath;
+  // A missing property is a schema-known name, not a submitted value, so the
+  // path can point at it directly (`/context` rather than `` for a missing
+  // top-level `context`).
+  if (error.keyword === 'required') {
+    const missing = (error.params as { missingProperty?: unknown }).missingProperty;
+    if (typeof missing === 'string') path = `${path}/${escapePointer(missing)}`;
+  }
+  return { path, rule: error.keyword };
+}
+
+function escapePointer(segment: string): string {
+  return segment.replace(/~/g, '~0').replace(/\//g, '~1');
+}
+
+/**
+ * Semantic rules JSON Schema cannot express. They run only when the schema
+ * passed, so they can rely on the value's shape.
+ */
+const semanticRules: Partial<Record<EntityName, (value: never) => ValidationIssue[]>> = {
+  Run: (run: Run): ValidationIssue[] => {
+    const a = run.accounting;
+    const reconciles =
+      a.attempted === a.succeeded + a.failed &&
+      a.planned === a.attempted + a.excluded + a.unobserved;
+    return reconciles ? [] : [{ path: '/accounting', rule: 'accounting_reconciles' }];
+  },
+};
+
+/** Validate `value` as the named v1 entity. */
+export function validate(entity: EntityName, value: unknown): ValidationResult {
+  const fn = validatorFor(entity);
+  const ok = fn(value);
+  if (!ok) {
+    const seen = new Set<string>();
+    const errors: ValidationIssue[] = [];
+    for (const error of fn.errors ?? []) {
+      const issue = toIssue(error);
+      const key = `${issue.path}\u0000${issue.rule}`;
+      if (seen.has(key)) continue;
+      seen.add(key);
+      errors.push(issue);
+    }
+    return { ok: false, errors };
+  }
+  const rule = semanticRules[entity];
+  const errors = rule === undefined ? [] : rule(value as never);
+  return { ok: errors.length === 0, errors };
+}
+
+/** Type guard form of `validate` for callers that want the static type. */
+export function isValid<E extends EntityName>(entity: E, value: unknown): boolean {
+  return validate(entity, value).ok;
+}

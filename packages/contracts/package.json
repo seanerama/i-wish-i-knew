@@ -1,0 +1,39 @@
+{
+  "name": "@iwik/contracts",
+  "version": "0.0.1",
+  "private": true,
+  "description": "Frozen v1 evidence-envelope contracts: TypeBox definitions, generated JSON Schema, JCS canonicalization, and validation",
+  "license": "MIT",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist"
+  ],
+  "engines": {
+    "node": "22.x"
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "contracts:build": "tsx bin/build.ts",
+    "contracts:check": "tsx bin/build.ts --check",
+    "test": "node --import tsx --test \"test/**/*.test.ts\""
+  },
+  "dependencies": {
+    "@sinclair/typebox": "0.34.52",
+    "ajv": "8.20.0",
+    "ajv-formats": "3.0.1"
+  },
+  "devDependencies": {
+    "@types/node": "22.20.1",
+    "tsx": "4.23.13",
+    "typescript": "5.9.3"
+  }
+}

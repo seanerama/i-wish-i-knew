@@ -1,0 +1,17 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:iwik:contracts:v1:Outcome",
+  "title": "Outcome",
+  "description": "Observed outcome against a prior prediction (stub)",
+  "type": "object",
+  "required": [
+    "outcome_id"
+  ],
+  "properties": {
+    "outcome_id": {
+      "pattern": "^[0-9A-HJKMNP-TV-Z]{26}$",
+      "description": "ULID identifier",
+      "type": "string"
+    }
+  }
+}

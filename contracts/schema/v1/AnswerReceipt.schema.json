@@ -1,0 +1,141 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:iwik:contracts:v1:AnswerReceipt",
+  "title": "AnswerReceipt",
+  "additionalProperties": false,
+  "description": "Receipt for an evidence query: cohort, versions, released result, revision",
+  "type": "object",
+  "required": [
+    "receipt_id",
+    "query_digest",
+    "status",
+    "cohort",
+    "calculation_version",
+    "policy_version",
+    "evidence_revision",
+    "issued_at"
+  ],
+  "properties": {
+    "receipt_id": {
+      "pattern": "^[0-9A-HJKMNP-TV-Z]{26}$",
+      "description": "ULID identifier",
+      "type": "string"
+    },
+    "query_digest": {
+      "pattern": "^sha256:[0-9a-f]{64}$",
+      "description": "SHA-256 digest, `sha256:<hex>`",
+      "type": "string"
+    },
+    "status": {
+      "type": "string",
+      "enum": [
+        "released",
+        "suppressed",
+        "insufficient_evidence",
+        "stale"
+      ]
+    },
+    "cohort": {
+      "additionalProperties": false,
+      "type": "object",
+      "required": [
+        "protocol_ref",
+        "filters",
+        "orgs",
+        "runs"
+      ],
+      "properties": {
+        "protocol_ref": {
+          "pattern": "^[a-z0-9][a-z0-9-]*/[a-z0-9][a-z0-9-]*@[1-9][0-9]*$",
+          "description": "Protocol reference: <pack>/<protocol>@<major>",
+          "type": "string"
+        },
+        "filters": {
+          "description": "Context filters applied, keyed by context key",
+          "type": "object",
+          "patternProperties": {
+            "^(.*)$": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "number"
+                },
+                {
+                  "type": "boolean"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            }
+          }
+        },
+        "orgs": {
+          "pattern": "^(<[0-9]+|[0-9]+-[0-9]+|[0-9]+\\+)$",
+          "description": "Count band, e.g. `3-5`, `<3`, `10+`",
+          "type": "string"
+        },
+        "runs": {
+          "pattern": "^(<[0-9]+|[0-9]+-[0-9]+|[0-9]+\\+)$",
+          "description": "Count band, e.g. `3-5`, `<3`, `10+`",
+          "type": "string"
+        }
+      }
+    },
+    "calculation_version": {
+      "minLength": 1,
+      "type": "string"
+    },
+    "policy_version": {
+      "minLength": 1,
+      "type": "string"
+    },
+    "evidence_revision": {
+      "minimum": 0,
+      "type": "integer"
+    },
+    "result": {
+      "additionalProperties": false,
+      "type": "object",
+      "properties": {
+        "findings": {
+          "type": "array",
+          "items": {}
+        },
+        "applicability": {},
+        "distributions": {},
+        "missingness": {},
+        "contradictions": {
+          "type": "array",
+          "items": {}
+        },
+        "uncertainty": {},
+        "freshness": {},
+        "limitations": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      }
+    },
+    "suppression_reasons": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "enum": [
+          "min_orgs",
+          "concentration",
+          "differencing"
+        ]
+      }
+    },
+    "issued_at": {
+      "format": "date-time",
+      "description": "RFC 3339 UTC timestamp",
+      "type": "string"
+    }
+  }
+}

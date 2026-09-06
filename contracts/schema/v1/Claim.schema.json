@@ -1,0 +1,17 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:iwik:contracts:v1:Claim",
+  "title": "Claim",
+  "description": "Claim: assertion with derivation and supporting runs (stub)",
+  "type": "object",
+  "required": [
+    "claim_id"
+  ],
+  "properties": {
+    "claim_id": {
+      "pattern": "^[0-9A-HJKMNP-TV-Z]{26}$",
+      "description": "ULID identifier",
+      "type": "string"
+    }
+  }
+}

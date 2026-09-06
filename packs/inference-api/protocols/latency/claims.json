@@ -1,0 +1,43 @@
+{
+  "protocol_ref": "inference-api/latency@1",
+  "analysis_unit": "One run (one protocol execution from one runner node) is one sample; attempts inside a run are samples within a run, never independent observations (ADR-0003).",
+  "claims": [
+    {
+      "name": "latency_distribution",
+      "question": "Client-observed time-to-first-token and total-latency distributions for the target under the fixed prompt set, concurrency, and max_tokens.",
+      "derivation": {
+        "source": "result.summary.ttft_ms and result.summary.total_ms",
+        "per_run": "nearest-rank percentiles (p50, p90, p95, p99) over succeeded attempts only",
+        "across_runs": "distribution of per-run percentiles across compatible runs; report the spread, never a single pooled number",
+        "minimum_succeeded_attempts_per_run": 10
+      },
+      "excludes": [
+        "attempts with status failed",
+        "runs with execution_status excluded or unobserved"
+      ],
+      "comparability": [
+        "model.reported",
+        "concurrency",
+        "retry_policy",
+        "cache_disabled",
+        "client_region",
+        "max_tokens",
+        "prompt_set"
+      ]
+    },
+    {
+      "name": "error_rate",
+      "question": "Fraction of attempts the target failed under the protocol.",
+      "derivation": {
+        "source": "result.summary.failed / result.summary.attempted, with result.summary.error_classes for the breakdown",
+        "per_run": "failed / attempted",
+        "across_runs": "distribution of per-run rates across compatible runs",
+        "minimum_attempts_per_run": 10
+      },
+      "excludes": [
+        "unobserved attempts (target unreachable before any attempt) are never counted as failures (R4)"
+      ],
+      "comparability": ["model.reported", "concurrency", "retry_policy", "client_region"]
+    }
+  ]
+}
