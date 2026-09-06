@@ -1,0 +1,37 @@
+{
+  "name": "@iwik/service",
+  "version": "0.0.1",
+  "private": true,
+  "description": "I Wish I Knew cooperative service: member-api intake, receipts, envelope encryption, protocol registry, console, worker",
+  "license": "MIT",
+  "type": "module",
+  "engines": {
+    "node": "22.x"
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "start": "node dist/server.js",
+    "dev": "tsx src/server.ts",
+    "migrate": "tsx src/migrate.ts",
+    "worker": "tsx src/worker.ts",
+    "test": "node --import tsx --test --test-concurrency=1 \"test/**/*.test.ts\""
+  },
+  "dependencies": {
+    "@fastify/cookie": "11.1.2",
+    "@fastify/formbody": "9.0.0",
+    "@fastify/view": "12.0.0",
+    "@iwik/contracts": "0.0.1",
+    "eta": "4.6.0",
+    "fastify": "5.12.3",
+    "node-pg-migrate": "9.0.0",
+    "pg": "8.23.0",
+    "pino": "10.3.1"
+  },
+  "devDependencies": {
+    "@types/node": "22.20.1",
+    "@types/pg": "8.23.1",
+    "tsx": "4.23.13",
+    "typescript": "5.9.3"
+  }
+}
