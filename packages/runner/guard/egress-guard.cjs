@@ -6,9 +6,13 @@
 // (http, https, tls, undici/fetch, and raw sockets all end up there), so that
 // is the chokepoint: a connection to a host outside IWIK_ALLOWED_HOSTS is
 // refused with an `IWIK_EGRESS_DENIED` error, recorded in IWIK_EGRESS_LOG,
-// and reported on stderr. `fetch` is also patched to fail early, and
-// `child_process` is disabled because a subprocess would not inherit the
-// guard's patches.
+// and reported on stderr. `fetch` is also patched to fail early. Routes that
+// would bypass the patched prototype are closed too:
+//   - child_process and worker_threads (a subprocess or worker would not
+//     inherit the patches; a Worker's execArgv does not carry --require);
+//   - dgram (UDP never touches net.Socket);
+//   - process.binding / process._linkedBinding to tcp_wrap, pipe_wrap,
+//     udp_wrap (raw handles behind net and dgram).
 //
 // This is a BEST-EFFORT guard for Node harnesses in v1: it runs inside the
 // harness process, which could in principle undo it (Node offers no
@@ -17,7 +21,9 @@
 // exits 2 (protocol violated) before running any harness code.
 const fs = require('node:fs');
 const net = require('node:net');
+const dgram = require('node:dgram');
 const childProcess = require('node:child_process');
+const workerThreads = require('node:worker_threads');
 
 function parseAllowed(raw) {
   if (raw === undefined || raw === null) return [];
@@ -93,6 +99,25 @@ function extractTarget(args) {
   return { host: 'localhost' };
 }
 
+const BLOCKED_BINDINGS = new Set(['tcp_wrap', 'pipe_wrap', 'udp_wrap']);
+
+function guardBinding(name) {
+  const original = process[name];
+  if (typeof original !== 'function') return;
+  const guarded = function guardedBinding(module, ...rest) {
+    if (BLOCKED_BINDINGS.has(String(module))) {
+      throw denial(`process.${name}`, String(module));
+    }
+    return original.call(this, module, ...rest);
+  };
+  Object.defineProperty(process, name, {
+    value: guarded,
+    writable: false,
+    configurable: false,
+    enumerable: false,
+  });
+}
+
 function install() {
   const originalConnect = net.Socket.prototype.connect;
   net.Socket.prototype.connect = function guardedConnect(...args) {
@@ -133,6 +158,24 @@ function install() {
       throw denial(`child_process.${name}`, 'subprocess');
     };
   }
+
+  // A Worker starts a fresh isolate whose execArgv does not include this
+  // preload, so it would run unguarded: refuse to construct one.
+  workerThreads.Worker = function blockedWorker() {
+    throw denial('worker_threads.Worker', 'worker');
+  };
+
+  // UDP never goes through net.Socket.
+  dgram.createSocket = function blockedDgram() {
+    throw denial('dgram.createSocket', 'udp');
+  };
+  dgram.Socket = function blockedDgramSocket() {
+    throw denial('dgram.Socket', 'udp');
+  };
+
+  // Raw handles behind net/dgram: tcp_wrap, pipe_wrap, udp_wrap.
+  guardBinding('binding');
+  guardBinding('_linkedBinding');
 }
 
 try {

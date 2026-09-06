@@ -57,10 +57,13 @@ function clientFor(home: string, options: ClientOptions): ApiClient {
 
 /**
  * Strip the vault-only fields and sign: the wire form of a vault draft.
- * `signed_at` is fixed the first time a run is signed and reused by later
- * previews, so re-previewing an unchanged draft yields the same content
+ * `signed_at` is reused from the previously signed run.json only when the
+ * unsigned body is otherwise unchanged (same content digest with the old
+ * `signed_at`), so re-previewing an unchanged draft yields the same content
  * digest (Ed25519 is deterministic) and a resubmission stays idempotent
- * instead of turning into a `run_conflict`.
+ * instead of turning into a `run_conflict`. Any change to the draft or the
+ * sharing policy gets a fresh `signed_at`: the timestamp then says when
+ * that body was signed, not when an earlier one was.
  */
 export function wireRun(
   home: string,
@@ -75,12 +78,25 @@ export function wireRun(
     ...draft,
     target,
     submission: {
-      signed_at: previous?.submission.signed_at ?? new Date().toISOString(),
+      signed_at: new Date().toISOString(),
       key_id: key.key_id,
       signature: 'AA==',
       sharing_policy: sharingPolicy,
     },
   };
+  if (previous !== undefined) {
+    // The reference is what was actually previewed (preview.json records its
+    // digest), so a run.json edited after the fact neither inherits nor
+    // forces a new timestamp: an unchanged draft keeps its signed_at.
+    const reference = readPreview(home, runId)?.content_digest ?? contentDigest(previous);
+    const candidate: Run = {
+      ...run,
+      submission: { ...run.submission, signed_at: previous.submission.signed_at },
+    };
+    if (contentDigest(candidate) === reference) {
+      run.submission.signed_at = previous.submission.signed_at;
+    }
+  }
   run.submission.signature = signPayload(key, signingPayload(run));
   const validation = validate('Run', run);
   if (!validation.ok) {

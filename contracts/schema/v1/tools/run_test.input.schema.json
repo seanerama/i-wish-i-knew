@@ -1,0 +1,18 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:iwik:contracts:v1:tools:run_test:input",
+  "title": "run_test input",
+  "additionalProperties": false,
+  "type": "object",
+  "required": [
+    "plan_id"
+  ],
+  "properties": {
+    "plan_id": {
+      "pattern": "^[0-9A-HJKMNP-TV-Z]{26}$",
+      "description": "ULID identifier",
+      "type": "string"
+    }
+  },
+  "description": "Execute a saved plan under local policy. Denied unless policy.json allows execution for the target and the estimate fits the budget; the denial carries the exact iwik command for the operator. Scope: local_policy; side effect: paid."
+}

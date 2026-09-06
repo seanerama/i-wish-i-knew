@@ -128,7 +128,8 @@
         "enum": [
           "min_orgs",
           "concentration",
-          "differencing"
+          "differencing",
+          "no_cooperative_evidence"
         ]
       }
     },

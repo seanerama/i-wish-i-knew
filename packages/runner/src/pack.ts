@@ -52,6 +52,8 @@ export interface LocalPack {
   result_schema_digest: string;
   contextSchema: Record<string, unknown>;
   resultSchema: Record<string, unknown>;
+  /** claims.json: permitted claims, derivation rules, and the optional cost model. */
+  claims: Record<string, unknown>;
 }
 
 function readJson(file: string): Record<string, unknown> {
@@ -109,6 +111,9 @@ export function loadLocalPack(packsDir: string, ref: string): LocalPack {
     result_schema_digest: String(expected['result_schema_digest']),
     contextSchema: readJson(join(protocolDir, 'context.schema.json')),
     resultSchema: readJson(join(protocolDir, 'result.schema.json')),
+    claims: existsSync(join(protocolDir, 'claims.json'))
+      ? readJson(join(protocolDir, 'claims.json'))
+      : {},
   };
 }
 

@@ -1,0 +1,25 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:iwik:contracts:v1:tools:withdraw_contribution:input",
+  "title": "withdraw_contribution input",
+  "additionalProperties": false,
+  "type": "object",
+  "required": [
+    "run_ids"
+  ],
+  "properties": {
+    "run_ids": {
+      "minItems": 1,
+      "type": "array",
+      "items": {
+        "pattern": "^[0-9A-HJKMNP-TV-Z]{26}$",
+        "description": "ULID identifier",
+        "type": "string"
+      }
+    },
+    "reason": {
+      "type": "string"
+    }
+  },
+  "description": "Withdraw your own runs; effective at the next evidence revision (milestone 0.3). Scope: publish; side effect: remote_write."
+}

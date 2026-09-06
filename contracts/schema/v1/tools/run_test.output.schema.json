@@ -1,0 +1,168 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:iwik:contracts:v1:tools:run_test:output",
+  "title": "run_test output",
+  "type": "object",
+  "description": "Output envelope of run_test: runner: iwik run --plan",
+  "required": [
+    "ok"
+  ],
+  "properties": {
+    "ok": {
+      "type": "boolean"
+    }
+  },
+  "oneOf": [
+    {
+      "additionalProperties": false,
+      "type": "object",
+      "required": [
+        "ok",
+        "data"
+      ],
+      "properties": {
+        "ok": {
+          "const": true,
+          "type": "boolean"
+        },
+        "data": {
+          "additionalProperties": false,
+          "type": "object",
+          "required": [
+            "run_id",
+            "plan_id",
+            "execution_status",
+            "accounting",
+            "context_unknown",
+            "issues",
+            "estimated_cost_usd",
+            "next_step"
+          ],
+          "properties": {
+            "run_id": {
+              "pattern": "^[0-9A-HJKMNP-TV-Z]{26}$",
+              "description": "ULID identifier",
+              "type": "string"
+            },
+            "plan_id": {
+              "pattern": "^[0-9A-HJKMNP-TV-Z]{26}$",
+              "description": "ULID identifier",
+              "type": "string"
+            },
+            "execution_status": {
+              "type": "string",
+              "enum": [
+                "attempted",
+                "succeeded",
+                "failed",
+                "excluded",
+                "unobserved"
+              ],
+              "description": "`unobserved` means the collector or target was unreachable; it is never a product failure"
+            },
+            "exclusion_reason": {
+              "type": "string"
+            },
+            "accounting": {
+              "additionalProperties": false,
+              "type": "object",
+              "required": [
+                "planned",
+                "attempted",
+                "succeeded",
+                "failed",
+                "excluded",
+                "unobserved"
+              ],
+              "properties": {
+                "planned": {
+                  "minimum": 0,
+                  "type": "integer"
+                },
+                "attempted": {
+                  "minimum": 0,
+                  "type": "integer"
+                },
+                "succeeded": {
+                  "minimum": 0,
+                  "type": "integer"
+                },
+                "failed": {
+                  "minimum": 0,
+                  "type": "integer"
+                },
+                "excluded": {
+                  "minimum": 0,
+                  "type": "integer"
+                },
+                "unobserved": {
+                  "minimum": 0,
+                  "type": "integer"
+                }
+              }
+            },
+            "context_unknown": {
+              "type": "array",
+              "items": {
+                "pattern": "^[a-z][a-z0-9_]*(\\.[a-z][a-z0-9_]*)*$",
+                "description": "Dotted lowercase context key",
+                "type": "string"
+              }
+            },
+            "issues": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            },
+            "estimated_cost_usd": {
+              "minimum": 0,
+              "type": "number"
+            },
+            "next_step": {
+              "type": "string"
+            }
+          }
+        }
+      }
+    },
+    {
+      "additionalProperties": false,
+      "type": "object",
+      "required": [
+        "ok",
+        "error"
+      ],
+      "properties": {
+        "ok": {
+          "const": false,
+          "type": "boolean"
+        },
+        "error": {
+          "additionalProperties": false,
+          "type": "object",
+          "required": [
+            "code",
+            "message"
+          ],
+          "properties": {
+            "code": {
+              "minLength": 1,
+              "pattern": "^[a-z][a-z0-9_]*$",
+              "description": "Machine-readable code: policy_denied, scope_required, suppressed, insufficient_evidence, validation_failed, not_yet_available, ...",
+              "type": "string"
+            },
+            "message": {
+              "description": "Never includes private field values",
+              "type": "string"
+            },
+            "next_step": {
+              "description": "Human-actionable text, e.g. the exact CLI command to run",
+              "type": "string"
+            }
+          }
+        }
+      }
+    }
+  ]
+}

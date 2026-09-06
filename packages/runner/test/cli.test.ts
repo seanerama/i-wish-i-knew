@@ -1,12 +1,12 @@
 // CLI tests: init prints the public key and never the private key or token;
 // policy commands; every denial exits nonzero with a one-line reason.
 import assert from 'node:assert/strict';
-import { spawnSync } from 'node:child_process';
+import { spawn, spawnSync } from 'node:child_process';
 import { readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { after, test } from 'node:test';
 import { loadPolicy } from '../src/index.js';
-import { cleanupTemp, cliPath, NODE_ID, tempDir, TEST_TOKEN } from './helpers.js';
+import { cleanupTemp, cliPath, NODE_ID, repoRoot, tempDir, TEST_TOKEN } from './helpers.js';
 
 after(cleanupTemp);
 
@@ -51,6 +51,11 @@ test('init: prints the enrollment public key, never the token or private key; id
     /Enroll this node: sign in to the console at http:\/\/127\.0\.0\.1:1\/org, then/,
   );
   assert.match(text, /Paste the public key above under "Register a node" and register the node/);
+  // the base64 raw key is what init prints; PEM is accepted at registration only
+  assert.match(
+    text,
+    /iwik init prints the base64 raw key; a PEM block is accepted there too but is never what iwik init prints/,
+  );
   assert.match(text, /base64 raw key: one line of 44 characters, the 32 raw bytes/);
   assert.match(text, /PEM SPKI block: -----BEGIN PUBLIC KEY----- \.\.\. -----END PUBLIC KEY-----/);
   assert.match(text, /Either form is stored canonically as the base64 raw key/);
@@ -71,6 +76,89 @@ test('init: prints the enrollment public key, never the token or private key; id
   assert.match(second.stderr, /signing key: kept/);
   assert.equal(readFileSync(join(home, 'token'), 'utf8'), TEST_TOKEN + '\n', 'the token is kept');
   assert.equal(JSON.parse(readFileSync(join(home, 'config.json'), 'utf8')).node_id, NODE_ID);
+});
+
+test('init: with a token and no --node-id, the node id comes from GET /v1/whoami; offline keeps working', async () => {
+  // the CLI is driven with spawnSync, so the service lives in its own process
+  const base = tempDir();
+  const log = join(base, 'requests.log');
+  writeFileSync(log, '');
+  const service = spawn(
+    process.execPath,
+    [
+      join(repoRoot, 'packages', 'runner', 'test', 'fixtures', 'whoami-server.cjs'),
+      TEST_TOKEN,
+      log,
+    ],
+    { stdio: ['ignore', 'pipe', 'inherit'] },
+  );
+  const port = await new Promise<number>((resolve, reject) => {
+    let text = '';
+    service.stdout.setEncoding('utf8');
+    service.stdout.on('data', (chunk: string) => {
+      text += chunk;
+      if (text.includes('\n'))
+        resolve((JSON.parse(text.split('\n')[0] ?? '{}') as { port: number }).port);
+    });
+    service.once('error', reject);
+  });
+  const seen = (): string[] =>
+    readFileSync(log, 'utf8')
+      .split('\n')
+      .filter((l) => l !== '');
+  try {
+    const home = join(base, 'home');
+    const tokenFile = join(base, 'token.txt');
+    writeFileSync(tokenFile, TEST_TOKEN + '\n');
+    const first = iwik(home, [
+      'init',
+      '--service',
+      `http://127.0.0.1:${port}`,
+      '--token-file',
+      tokenFile,
+    ]);
+    assert.equal(first.code, 0, first.all);
+    assert.deepEqual(seen(), ['GET /v1/whoami auth']);
+    assert.match(
+      first.stderr,
+      new RegExp(
+        `node id: ${NODE_ID} \\(from GET /v1/whoami; organization "Whoami Org", scopes query, submit\\)`,
+      ),
+    );
+    assert.ok(!first.all.includes(TEST_TOKEN));
+    assert.equal(JSON.parse(readFileSync(join(home, 'config.json'), 'utf8')).node_id, NODE_ID);
+
+    // no token: no call, and the message says how to set the id
+    const bare = join(base, 'bare');
+    const noToken = iwik(bare, ['init', '--service', `http://127.0.0.1:${port}`]);
+    assert.equal(noToken.code, 0, noToken.all);
+    assert.equal(seen().length, 1);
+    assert.match(
+      noToken.stderr,
+      /node id: \(not set; store a token so GET \/v1\/whoami can fill it in, or pass --node-id\)/,
+    );
+
+    // --offline: no call; the service being down is reported, not fatal
+    const offline = iwik(home, ['init', '--service', `http://127.0.0.1:${port}`, '--offline']);
+    assert.equal(offline.code, 0, offline.all);
+    assert.equal(seen().length, 1);
+    assert.match(offline.stderr, new RegExp(`node id: ${NODE_ID}$`, 'm'));
+    const down = iwik(join(base, 'down'), [
+      'init',
+      '--service',
+      'http://127.0.0.1:1',
+      '--token-file',
+      tokenFile,
+    ]);
+    assert.equal(down.code, 0, down.all);
+    assert.match(down.stderr, /GET \/v1\/whoami failed: .*pass --node-id to set it offline/);
+    assert.ok(!down.all.includes(TEST_TOKEN));
+  } finally {
+    await new Promise<void>((resolve) => {
+      service.once('exit', () => resolve());
+      service.kill('SIGTERM');
+    });
+  }
 });
 
 test('policy show / set / allow-target / deny-target', () => {
@@ -141,8 +229,8 @@ test('run: policy denial exits 3 with a one-line reason; submit without preview 
   assert.match(noPreview.stderr, /^iwik: run_not_found: /);
 
   const usage = iwik(home, ['run', '--protocol', 'nope']);
-  assert.equal(usage.code, 1);
-  assert.match(usage.stderr, /required option/);
+  assert.equal(usage.code, 2);
+  assert.match(usage.stderr, /^iwik: usage: required option/);
 
   // uninitialised home: not_initialized, exit 7, no stack trace
   const fresh = join(tempDir(), 'nothing');

@@ -1,0 +1,18 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:iwik:contracts:v1:tools:get_receipt:input",
+  "title": "get_receipt input",
+  "additionalProperties": false,
+  "type": "object",
+  "required": [
+    "receipt_id"
+  ],
+  "properties": {
+    "receipt_id": {
+      "pattern": "^[0-9A-HJKMNP-TV-Z]{26}$",
+      "description": "ULID identifier",
+      "type": "string"
+    }
+  },
+  "description": "Re-read one of your organization's receipts (intake or query). Scope: query; side effect: read."
+}

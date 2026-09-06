@@ -1,0 +1,83 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:iwik:contracts:v1:tools:withdraw_contribution:output",
+  "title": "withdraw_contribution output",
+  "type": "object",
+  "description": "Output envelope of withdraw_contribution: POST /v1/withdrawals",
+  "required": [
+    "ok"
+  ],
+  "properties": {
+    "ok": {
+      "type": "boolean"
+    }
+  },
+  "oneOf": [
+    {
+      "additionalProperties": false,
+      "type": "object",
+      "required": [
+        "ok",
+        "data"
+      ],
+      "properties": {
+        "ok": {
+          "const": true,
+          "type": "boolean"
+        },
+        "data": {
+          "additionalProperties": false,
+          "type": "object",
+          "required": [
+            "withdrawal_id"
+          ],
+          "properties": {
+            "withdrawal_id": {
+              "pattern": "^[0-9A-HJKMNP-TV-Z]{26}$",
+              "description": "ULID identifier",
+              "type": "string"
+            }
+          }
+        }
+      }
+    },
+    {
+      "additionalProperties": false,
+      "type": "object",
+      "required": [
+        "ok",
+        "error"
+      ],
+      "properties": {
+        "ok": {
+          "const": false,
+          "type": "boolean"
+        },
+        "error": {
+          "additionalProperties": false,
+          "type": "object",
+          "required": [
+            "code",
+            "message"
+          ],
+          "properties": {
+            "code": {
+              "minLength": 1,
+              "pattern": "^[a-z][a-z0-9_]*$",
+              "description": "Machine-readable code: policy_denied, scope_required, suppressed, insufficient_evidence, validation_failed, not_yet_available, ...",
+              "type": "string"
+            },
+            "message": {
+              "description": "Never includes private field values",
+              "type": "string"
+            },
+            "next_step": {
+              "description": "Human-actionable text, e.g. the exact CLI command to run",
+              "type": "string"
+            }
+          }
+        }
+      }
+    }
+  ]
+}

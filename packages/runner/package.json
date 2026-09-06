@@ -18,7 +18,9 @@
   },
   "files": [
     "dist",
-    "guard"
+    "guard",
+    "schema",
+    "SKILL.md"
   ],
   "engines": {
     "node": "22.x"
@@ -30,6 +32,7 @@
   },
   "dependencies": {
     "@iwik/contracts": "0.0.1",
+    "@modelcontextprotocol/sdk": "1.30.0",
     "ajv": "8.20.0",
     "ajv-formats": "3.0.1",
     "commander": "15.0.0"

@@ -9,7 +9,11 @@
         "source": "result.summary.ttft_ms and result.summary.total_ms",
         "per_run": "nearest-rank percentiles (p50, p90, p95, p99) over succeeded attempts only",
         "across_runs": "distribution of per-run percentiles across compatible runs; report the spread, never a single pooled number",
-        "minimum_succeeded_attempts_per_run": 10
+        "minimum_succeeded_attempts_per_run": 10,
+        "metrics": [
+          { "name": "ttft_ms", "path": "/summary/ttft_ms", "kind": "distribution", "unit": "ms" },
+          { "name": "total_ms", "path": "/summary/total_ms", "kind": "distribution", "unit": "ms" }
+        ]
       },
       "excludes": [
         "attempts with status failed",
@@ -32,12 +36,31 @@
         "source": "result.summary.failed / result.summary.attempted, with result.summary.error_classes for the breakdown",
         "per_run": "failed / attempted",
         "across_runs": "distribution of per-run rates across compatible runs",
-        "minimum_attempts_per_run": 10
+        "minimum_attempts_per_run": 10,
+        "metrics": [
+          { "name": "error_rate", "path": "/summary/error_rate", "kind": "rate" },
+          { "name": "error_classes", "path": "/summary/error_classes", "kind": "breakdown" }
+        ]
       },
       "excludes": [
         "unobserved attempts (target unreachable before any attempt) are never counted as failures (R4)"
       ],
       "comparability": ["model.reported", "concurrency", "retry_policy", "client_region"]
     }
-  ]
+  ],
+  "cost_model": {
+    "version": 1,
+    "currency": "usd",
+    "kind": "per_request_tokens",
+    "description": "Estimated spend for one plan of `planned` sequential chat completions. Fixture targets (the in-repo stub server) bill nothing; a real endpoint is priced from operator-supplied per-token prices, because the pack cannot know a provider's price list.",
+    "fixture_per_request_usd": 0,
+    "prompt_tokens_per_request": 64,
+    "requires_operator_prices": ["usd_per_1m_prompt_tokens", "usd_per_1m_completion_tokens"],
+    "formula": "estimated_usd = planned * (prompt_tokens_per_request * usd_per_1m_prompt_tokens + max_tokens * usd_per_1m_completion_tokens) / 1000000",
+    "notes": [
+      "prompt_tokens_per_request is an upper bound over harness/prompts.json plus the system prompt.",
+      "max_tokens is the per-request completion cap the runner passes in input.json (budget.max_tokens); the estimate assumes every request returns the cap, so it is an upper bound.",
+      "Without both operator prices a non-fixture target has no estimate and the runner refuses to execute (fail closed, ADR-0003)."
+    ]
+  }
 }

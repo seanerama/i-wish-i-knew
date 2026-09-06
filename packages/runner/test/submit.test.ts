@@ -1,13 +1,10 @@
 // preview / submit / receipt against a small in-process mirror of the
 // member-api intake: preview binds a content digest, submit requires a
 // stored preview, verifies the Ed25519 signature with the node's public key,
-// is idempotent, and rejects a tampered body with 409 preview_mismatch.
+// is idempotent, rejects a tampered body with 409 preview_mismatch, and
+// `signed_at` is reused only while the unsigned body is unchanged.
 import assert from 'node:assert/strict';
-import { createPublicKey, verify } from 'node:crypto';
-import { createServer } from 'node:http';
-import type { IncomingMessage, Server, ServerResponse } from 'node:http';
 import { existsSync, readFileSync, writeFileSync } from 'node:fs';
-import { join } from 'node:path';
 import { after, before, test } from 'node:test';
 import type { Run } from '@iwik/contracts';
 import { validate } from '@iwik/contracts';
@@ -18,156 +15,24 @@ import {
   receipt,
   run,
   RunnerError,
-  signingPayload,
   submit,
   vaultPaths,
 } from '../src/index.js';
 import type { RunDraft } from '../src/index.js';
 import {
   allow,
+  allowWithBudget,
   cleanupTemp,
+  fakeService,
+  FREE_PRICES,
   makeHome,
   OPERATOR_CONTEXT,
-  packsDir,
   readJson,
   startStub,
-  TEST_TOKEN,
 } from './helpers.js';
+import type { FakeService } from './helpers.js';
 
 const PROTOCOL = 'inference-api/latency@1';
-const ED25519_SPKI_PREFIX = Buffer.from('302a300506032b6570032100', 'hex');
-
-interface FakeService {
-  server: Server;
-  url: string;
-  previews: Map<string, string>;
-  runs: Map<string, { digest: string; receipt: Record<string, unknown> }>;
-  receipts: Map<string, Record<string, unknown>>;
-  pubkey: string;
-  lastBody: unknown;
-}
-
-function readBody(req: IncomingMessage): Promise<string> {
-  return new Promise((resolve) => {
-    let text = '';
-    req.setEncoding('utf8');
-    req.on('data', (c: string) => (text += c));
-    req.on('end', () => resolve(text));
-  });
-}
-
-function fakeService(): Promise<FakeService> {
-  const protocol = readJson<Record<string, unknown>>(
-    join(packsDir, 'inference-api', 'protocols', 'latency', 'protocol.json'),
-  );
-  const state: FakeService = {
-    server: createServer(),
-    url: '',
-    previews: new Map(),
-    runs: new Map(),
-    receipts: new Map(),
-    pubkey: '',
-    lastBody: undefined,
-  };
-  let counter = 0;
-  const id = (): string =>
-    '01ARZ3NDEKTSV4RRFFQ69G5' +
-    String(counter++)
-      .padStart(3, '0')
-      .replace(/[ILOU]/g, 'A');
-  const json = (res: ServerResponse, status: number, body: unknown): void => {
-    res.writeHead(status, { 'content-type': 'application/json' });
-    res.end(JSON.stringify(body));
-  };
-  const error = (res: ServerResponse, status: number, code: string, details?: unknown[]): void =>
-    json(res, status, { error: { code, message: code, ...(details ? { details } : {}) } });
-
-  state.server.on('request', async (req, res) => {
-    if (req.headers.authorization !== `Bearer ${TEST_TOKEN}`)
-      return error(res, 401, 'unauthorized');
-    const url = req.url ?? '/';
-    if (req.method === 'GET' && url.startsWith('/v1/protocols/')) return json(res, 200, protocol);
-    if (req.method === 'GET' && url.startsWith('/v1/receipts/')) {
-      const found = state.receipts.get(decodeURIComponent(url.slice('/v1/receipts/'.length)));
-      return found ? json(res, 200, found) : error(res, 404, 'not_found');
-    }
-    const body = JSON.parse(await readBody(req)) as { run?: Run; preview_id?: string };
-    state.lastBody = body;
-    const candidate = body.run;
-    const validation = validate('Run', candidate);
-    if (!validation.ok) return error(res, 422, 'validation_failed', validation.errors);
-    const r = candidate as Run;
-    if ('org_ref' in r)
-      return error(res, 422, 'validation_failed', [{ path: '/org_ref', rule: 'server_assigned' }]);
-    const leaky = JSON.stringify(r.context).includes('AKIA');
-    if (leaky) {
-      const index = r.context.findIndex((f) => String(f.value).includes('AKIA'));
-      return error(res, 422, 'validation_failed', [
-        { path: `/context/${index}/value`, rule: 'secret_pattern' },
-      ]);
-    }
-    const digest = contentDigest(r);
-    if (req.method === 'POST' && url === '/v1/contributions/preview') {
-      const previewId = id();
-      state.previews.set(previewId, digest);
-      return json(res, 200, {
-        preview_id: previewId,
-        content_digest: digest,
-        expires_at: new Date(Date.now() + 3600_000).toISOString(),
-        validation: { ok: true },
-        sanitization: { strings_checked: 1, rules: ['secret_pattern', 'string_too_long'] },
-        would_store: {
-          run_id: r.run_id,
-          sharing_policy: r.target.kind === 'fixture' ? 'private' : r.submission.sharing_policy,
-        },
-      });
-    }
-    if (req.method === 'POST' && url === '/v1/runs') {
-      if (typeof body.preview_id !== 'string')
-        return error(res, 422, 'validation_failed', [{ path: '/preview_id', rule: 'required' }]);
-      const bound = state.previews.get(body.preview_id);
-      if (bound === undefined) return error(res, 404, 'preview_not_found');
-      if (bound !== digest) return error(res, 409, 'preview_mismatch');
-      const key = createPublicKey({
-        key: Buffer.concat([ED25519_SPKI_PREFIX, Buffer.from(state.pubkey, 'base64')]),
-        format: 'der',
-        type: 'spki',
-      });
-      const ok = verify(
-        null,
-        Buffer.from(signingPayload(r), 'utf8'),
-        key,
-        Buffer.from(r.submission.signature, 'base64'),
-      );
-      if (!ok) return error(res, 401, 'bad_signature');
-      const prior = state.runs.get(r.run_id);
-      if (prior !== undefined) {
-        if (prior.digest === digest) return json(res, 200, prior.receipt);
-        return error(res, 409, 'run_conflict');
-      }
-      const receiptId = id();
-      const issued = {
-        receipt_id: receiptId,
-        kind: 'intake',
-        status: 'accepted',
-        run_id: r.run_id,
-        content_digest: digest,
-        evidence_revision: state.runs.size + 1,
-      };
-      state.runs.set(r.run_id, { digest, receipt: issued });
-      state.receipts.set(receiptId, issued);
-      return json(res, 201, issued);
-    }
-    return error(res, 404, 'not_found');
-  });
-  return new Promise((resolve) => {
-    state.server.listen(0, '127.0.0.1', () => {
-      const address = state.server.address();
-      state.url = `http://127.0.0.1:${typeof address === 'object' && address !== null ? address.port : 0}`;
-      resolve(state);
-    });
-  });
-}
 
 let service: FakeService;
 let stub: Awaited<ReturnType<typeof startStub>>;
@@ -184,7 +49,7 @@ before(async () => {
 
 after(async () => {
   await stub.close();
-  await new Promise<void>((resolve) => service.server.close(() => resolve()));
+  await service.close();
   cleanupTemp();
 });
 
@@ -258,6 +123,7 @@ test('preview strips vault-only fields, signs, stores preview.json and run.json;
   const again = await preview(r.run_id, { home });
   assert.notEqual(again.preview_id, p.preview_id);
   assert.equal(again.content_digest, p.content_digest);
+  assert.equal(again.body.run.submission.signed_at, p.body.run.submission.signed_at);
   assert.equal(again.body.run.submission.signature, p.body.run.submission.signature);
   const s3 = await submit(r.run_id, { home });
   assert.equal(s3.status, 200);
@@ -269,6 +135,43 @@ test('preview strips vault-only fields, signs, stores preview.json and run.json;
     receipt('01ARZ3NDEKTSV4RRFFQ69G5ZZZ', { home }),
     (e: unknown) => e instanceof ApiError && e.status === 404,
   );
+});
+
+test('signed_at is refreshed when the unsigned body changes, and reused when it does not', async () => {
+  const r = await run({
+    home,
+    protocol: PROTOCOL,
+    target: stub.url,
+    planned: 1,
+    targetKind: 'fixture',
+    context: OPERATOR_CONTEXT,
+  });
+  const first = await preview(r.run_id, { home });
+  await new Promise((resolve) => setTimeout(resolve, 5));
+  // unchanged draft, unchanged policy: same signed_at, same digest
+  const same = await preview(r.run_id, { home });
+  assert.equal(same.body.run.submission.signed_at, first.body.run.submission.signed_at);
+  assert.equal(same.content_digest, first.content_digest);
+
+  // the draft changes (an operator edits context in the vault): fresh signed_at
+  const paths = vaultPaths(home, r.run_id);
+  const draft = readJson<RunDraft>(paths.draft);
+  const region = draft.context.find((f) => f.key === 'client_region');
+  assert.ok(region);
+  region.value = 'eu-west-1';
+  writeFileSync(paths.draft, JSON.stringify(draft));
+  await new Promise((resolve) => setTimeout(resolve, 5));
+  const changed = await preview(r.run_id, { home });
+  assert.notEqual(changed.content_digest, first.content_digest);
+  assert.ok(
+    Date.parse(changed.body.run.submission.signed_at) >
+      Date.parse(first.body.run.submission.signed_at),
+    'a changed body is signed at a later time',
+  );
+  // and the new body then keeps its own signed_at
+  const kept = await preview(r.run_id, { home });
+  assert.equal(kept.body.run.submission.signed_at, changed.body.run.submission.signed_at);
+  assert.equal(kept.content_digest, changed.content_digest);
 });
 
 test('a secret injected into the draft is refused by preview with path and rule, never the value', async () => {
@@ -300,6 +203,8 @@ test('a secret injected into the draft is refused by preview with path and rule,
 });
 
 test('the sharing policy chosen at run time travels to the wire, and preview can override it', async () => {
+  // a service target needs a cost estimate: zero prices make the stub free
+  allowWithBudget(home, 0, `127.0.0.1:${stub.port}`);
   const r = await run({
     home,
     protocol: PROTOCOL,
@@ -307,6 +212,7 @@ test('the sharing policy chosen at run time travels to the wire, and preview can
     planned: 1,
     targetKind: 'service',
     sharingPolicy: 'cooperative',
+    prices: FREE_PRICES,
     context: OPERATOR_CONTEXT,
   });
   const p = await preview(r.run_id, { home });

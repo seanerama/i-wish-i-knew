@@ -27,7 +27,7 @@ See [`STATUS.md`](STATUS.md) for live runtime state (deployed version, environme
 
 - `packages/contracts` — frozen v1 envelope as TypeBox + committed JSON Schema, JCS canonicalization, validation, pack digests
 - `packages/service` — Fastify service: `member-api` intake, receipts, envelope encryption, protocol registry, console, worker
-- `packages/runner` — the `iwik` CLI and `@iwik/runner` API: local policy, vault, harness executor with egress guard, preview and submit
+- `packages/runner` — the `iwik` CLI and `@iwik/runner` API: local policy, vault, harness executor with egress guard, plan/run/report, preview and submit, and the `iwik mcp` agent adapter (`SKILL.md`)
 - `packs/` — domain packs (data + harness); first: `inference-api`
 - `smoke/` — UI-smoke checks the Operator runs after a deploy
 
@@ -64,12 +64,16 @@ The runner (`packages/runner/README.md`, smoke check in `smoke/runner.md`):
 ```sh
 npm run build:runner
 export IWIK_HOME=$(mktemp -d)                    # default ~/.iwik
-node packages/runner/bin/iwik.cjs init --service http://localhost:3000 --token-file ./node-token --node-id <ulid>
+node packages/runner/bin/iwik.cjs init --service http://localhost:3000 --token-file ./node-token   # node id via GET /v1/whoami
+node packages/runner/bin/iwik.cjs plan --protocol inference-api/latency@1 --target http://127.0.0.1:8089 --target-kind fixture \
+  --question "how fast is the stub?" --context model.requested=stub-model --context concurrency=1 \
+  --context cache_disabled=true --context client_region=local       # prints a plan id; never executes
 node packages/runner/bin/iwik.cjs policy set allow_execution true
 node packages/runner/bin/iwik.cjs policy allow-target 127.0.0.1:8089
-node packages/runner/bin/iwik.cjs run --protocol inference-api/latency@1 --target http://127.0.0.1:8089 --target-kind fixture \
-  --context model.requested=stub-model --context concurrency=1 --context cache_disabled=true --context client_region=local
+node packages/runner/bin/iwik.cjs run --plan <plan_id>              # or run --protocol ... --target ... directly
+node packages/runner/bin/iwik.cjs report <run_id>                   # "Local evidence only — not corroborated by the cooperative"
 node packages/runner/bin/iwik.cjs preview <run_id> && node packages/runner/bin/iwik.cjs submit <run_id>
+IWIK_MCP_ENABLED=on node packages/runner/bin/iwik.cjs mcp           # stdio MCP server for agents (smoke/mcp.md)
 ```
 
 ## Enrollment (pilot)

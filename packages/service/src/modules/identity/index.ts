@@ -507,6 +507,19 @@ export function registerIdentity(app: FastifyInstance, pool: Pool): void {
       request.nodeRevoked = true;
     }
   });
+
+  // GET /v1/whoami (contracts/member-api.md, node identity endpoint): any
+  // valid node token learns its own node id, organization display name, and
+  // scopes. Never the org_ref: that is the opaque evidence-side join key.
+  app.get('/v1/whoami', async (request) => {
+    if (request.nodeRevoked) throw new ApiError(401, 'node_revoked');
+    if (request.auth === undefined) throw new ApiError(401, 'unauthorized');
+    return {
+      node_id: request.auth.node_id,
+      org_display_name: request.auth.org_name,
+      scopes: [...request.auth.scopes],
+    };
+  });
 }
 
 export function requireScope(

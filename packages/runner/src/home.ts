@@ -5,6 +5,7 @@
 import { chmodSync, existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { isAbsolute, join, resolve } from 'node:path';
+import { ApiClient } from './client.js';
 import { RunnerError } from './errors.js';
 import { generateKey, loadKey } from './keys.js';
 import { ULID_PATTERN } from './ulid.js';
@@ -206,3 +207,41 @@ export const DEFAULT_POLICY_JSON = {
   budget_per_plan_usd: 0,
   allow_disruptive: false,
 };
+
+export interface WhoAmI {
+  node_id: string;
+  org_display_name: string;
+  scopes: string[];
+}
+
+/**
+ * `GET /v1/whoami` (contracts/member-api.md, node identity endpoint): learn
+ * the node id the service knows this token by and store it in config.json,
+ * so `iwik init` needs no `--node-id` when a token is available. Throws a
+ * RunnerError (api_error / not_initialized) when the service cannot answer;
+ * the CLI reports that and keeps the home usable offline.
+ */
+export async function discoverNode(
+  home: string,
+  fetchImpl?: typeof fetch,
+): Promise<WhoAmI & { updated: boolean }> {
+  const config = loadConfig(home);
+  const token = loadToken(home);
+  const client = new ApiClient(config.service_url, token, fetchImpl);
+  const res = await client.get<Partial<WhoAmI>>('/v1/whoami');
+  const body = res.body ?? {};
+  if (typeof body.node_id !== 'string' || !ULID_PATTERN.test(body.node_id)) {
+    throw new RunnerError('api_error', 'whoami response lacks a node_id');
+  }
+  const scopes = Array.isArray(body.scopes)
+    ? body.scopes.filter((s): s is string => typeof s === 'string')
+    : [];
+  const updated = config.node_id !== body.node_id;
+  if (updated) saveConfig(home, { ...config, node_id: body.node_id });
+  return {
+    node_id: body.node_id,
+    org_display_name: typeof body.org_display_name === 'string' ? body.org_display_name : '',
+    scopes,
+    updated,
+  };
+}

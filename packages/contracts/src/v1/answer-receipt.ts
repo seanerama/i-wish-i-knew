@@ -34,7 +34,14 @@ export const ReceiptCohort = Type.Object(
 );
 export type ReceiptCohort = Static<typeof ReceiptCohort>;
 
-export const SuppressionReason = StringEnum(['min_orgs', 'concentration', 'differencing'] as const);
+// `no_cooperative_evidence` (added in stage 5, additive): the cohort is empty,
+// so the honest answer is `insufficient_evidence`, not a suppressed release.
+export const SuppressionReason = StringEnum([
+  'min_orgs',
+  'concentration',
+  'differencing',
+  'no_cooperative_evidence',
+] as const);
 export type SuppressionReason = Static<typeof SuppressionReason>;
 
 /** The released result. Sections are optional; the calculation version says which are present. */

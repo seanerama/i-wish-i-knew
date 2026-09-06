@@ -1,0 +1,18 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:iwik:contracts:v1:tools:submit_run:input",
+  "title": "submit_run input",
+  "additionalProperties": false,
+  "type": "object",
+  "required": [
+    "run_id"
+  ],
+  "properties": {
+    "run_id": {
+      "pattern": "^[0-9A-HJKMNP-TV-Z]{26}$",
+      "description": "ULID identifier",
+      "type": "string"
+    }
+  },
+  "description": "Submit the previewed run; refuses without a preview. Safe to repeat. Scope: submit; side effect: remote_write."
+}

@@ -1,0 +1,25 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:iwik:contracts:v1:tools:preview_contribution:input",
+  "title": "preview_contribution input",
+  "additionalProperties": false,
+  "type": "object",
+  "required": [
+    "run_id"
+  ],
+  "properties": {
+    "run_id": {
+      "pattern": "^[0-9A-HJKMNP-TV-Z]{26}$",
+      "description": "ULID identifier",
+      "type": "string"
+    },
+    "sharing_policy": {
+      "type": "string",
+      "enum": [
+        "private",
+        "cooperative"
+      ]
+    }
+  },
+  "description": "Dry-run intake for a run in the vault: validation, sanitization report, and exactly what would be sent. Scope: submit; side effect: read."
+}
