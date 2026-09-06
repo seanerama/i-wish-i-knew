@@ -36,6 +36,13 @@ export interface Config {
   previewTtlMs: number;
   /** Secret for the console session cookie signature (derived from the KEK). */
   cookieSecret: string;
+  /**
+   * `IWIK_TRUST_PROXY`: number of reverse-proxy hops whose X-Forwarded-* headers
+   * are trusted (Fastify `trustProxy`). 0 = none (staging, direct on the
+   * tailnet); 1 = behind one proxy (production behind Coolify's traefik,
+   * ADR-0004) so `request.ip` is the real client for the login rate limit.
+   */
+  trustProxy: number;
   /** Stage 6: enrollment console, operator bootstrap. Default OFF everywhere. */
   featureEnrollment: boolean;
   /**
@@ -169,6 +176,13 @@ function positiveInt(value: string | undefined, fallback: number, name: string):
   return n;
 }
 
+function nonNegativeInt(value: string | undefined, fallback: number, name: string): number {
+  if (value === undefined || value === '') return fallback;
+  const n = Number(value);
+  if (!Number.isInteger(n) || n < 0) throw new ConfigError(`${name} must be an integer >= 0`);
+  return n;
+}
+
 export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
   const nodeEnv = env['NODE_ENV'] ?? 'development';
   const production = nodeEnv === 'production';
@@ -191,6 +205,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
     extraSecretPatterns: parseSecretPatterns(env['IWIK_SECRET_PATTERNS']),
     maxStringLength: positiveInt(env['IWIK_MAX_STRING_LENGTH'], 1024, 'IWIK_MAX_STRING_LENGTH'),
     previewTtlMs: positiveInt(env['IWIK_PREVIEW_TTL_MS'], 60 * 60 * 1000, 'IWIK_PREVIEW_TTL_MS'),
+    trustProxy: nonNegativeInt(env['IWIK_TRUST_PROXY'], 0, 'IWIK_TRUST_PROXY'),
     cookieSecret: createHash('sha256')
       .update(Buffer.concat([Buffer.from('iwik-cookie'), kek]))
       .digest('hex'),

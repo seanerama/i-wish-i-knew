@@ -69,6 +69,8 @@ or `/envs/bulk`) and live nowhere else:
 | `IWIK_KEK` | 64 hex chars from `openssl rand -hex 32`; generated once, location recorded in `STATUS.md`; losing it makes stored envelopes unreadable |
 | `IWIK_FEATURE_INTAKE` | `off` until the operator-exclusion gate (ADR-0002) is decided; `on` to accept runs |
 | `PORT` | `3000` |
+| `IWIK_TRUST_PROXY` | `1` — the app sits behind exactly one proxy (Coolify's traefik), so `X-Forwarded-For` from that hop is the real client address. **Must be set to `1` before `IWIK_FEATURE_ENROLLMENT` is turned on**: the console login rate limit (stage 6) keys on the client IP, and with `0` every login would share traefik's address. Never set it higher than the number of proxies in front of the app. |
+| `IWIK_FEATURE_ENROLLMENT` | `off` until the Operator enables enrollment deliberately (stage 6; `IWIK_OPERATOR_TOKEN` and `IWIK_PUBLIC_URL` go with it, see the root README) |
 | `IWIK_SEED_ORG`, `IWIK_SEED_NODE_TOKEN`, `IWIK_SEED_NODE_PUBKEY`, `IWIK_SEED_NODE_ID` | optional pilot seed identity; unset for an empty service |
 | `IWIK_LOG_LEVEL` | `info` |
 

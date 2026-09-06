@@ -50,7 +50,9 @@ Service configuration is environment-only: `DATABASE_URL`, `IWIK_KEK`, `PORT`,
 `NODE_ENV=production`, `on` otherwise), and the optional seed identity
 `IWIK_SEED_ORG`, `IWIK_SEED_NODE_TOKEN`, `IWIK_SEED_NODE_PUBKEY` (base64 raw
 Ed25519 public key), `IWIK_SEED_NODE_ID`. Extra secret patterns for intake:
-`IWIK_SECRET_PATTERNS` (JSON array of regex sources).
+`IWIK_SECRET_PATTERNS` (JSON array of regex sources). `IWIK_TRUST_PROXY`
+(integer hop count, default `0`) makes `request.ip` come from `X-Forwarded-For`
+when the service runs behind that many reverse proxies (production: `1`).
 
 The whole stack on a clean machine: `IWIK_KEK=$(openssl rand -hex 32) docker compose up --build --wait`,
 then `curl localhost:3000/readyz` (`{"ok":true}`); `docker compose down -v` tears it down.

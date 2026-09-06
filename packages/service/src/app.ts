@@ -40,6 +40,10 @@ declare module 'fastify' {
   }
 }
 
+function trustHops(hops: number): (address: string, hop: number) => boolean {
+  return (_address, hop) => hop < hops;
+}
+
 export async function buildApp(config: Config): Promise<FastifyInstance> {
   const pool = createPool(config.databaseUrl);
   const registry = loadRegistry(config.packsDir);
@@ -50,7 +54,11 @@ export async function buildApp(config: Config): Promise<FastifyInstance> {
   const app = Fastify({
     logger: loggerOptions(config),
     bodyLimit: 2 * 1024 * 1024,
-    trustProxy: false,
+    // IWIK_TRUST_PROXY = N reverse-proxy hops (0 = never trust X-Forwarded-*;
+    // see config.ts). Expressed as a function because Fastify >= 5.12 treats a
+    // bare number as "trust nothing" (fail closed); `hop < N` is the hop-count
+    // rule: the socket peer is hop 0, each X-Forwarded-For entry one more.
+    trustProxy: config.trustProxy > 0 ? trustHops(config.trustProxy) : false,
   });
   app.decorate('iwik', { config, pool, registry, envelope, routes, loginFailures });
   app.addHook('onRoute', (route) => {
