@@ -96,9 +96,12 @@ jobs:
               - '.github/workflows/release.yml'
               - '.github/workflows/ci.yml'
               - 'package-lock.json'
+              - 'package.json'
+              - 'packages/*/package.json'
+              - '.npmrc'
       - name: Skip notice
         if: github.event_name == 'pull_request' && steps.changes.outputs.image != 'true'
-        run: echo "SKIP release-dry-run - no change to Dockerfile, .dockerignore, docker-compose.yml, deploy/, release.yml, ci.yml, or package-lock.json"
+        run: echo "SKIP release-dry-run - no change to Dockerfile, .dockerignore, docker-compose.yml, deploy/, release.yml, ci.yml, package-lock.json, package.json, packages/*/package.json, or .npmrc"
       - uses: docker/setup-qemu-action@v4
         if: github.event_name != 'pull_request' || steps.changes.outputs.image == 'true'
         with:
@@ -117,3 +120,30 @@ jobs:
           sbom: false
           cache-from: type=gha
           cache-to: type=gha,mode=max
+      # Stage 12 (issue #18): scan what release.yml would push, BEFORE a tag
+      # is cut, so a vulnerable dependency fails the PR rather than the
+      # release. A multi-arch build cannot be loaded into the local daemon,
+      # so the linux/amd64 half is rebuilt from the same cache and loaded,
+      # then scanned exactly as release.yml scans the pushed image.
+      - name: docker buildx build --platform linux/amd64 --load (for the scan)
+        if: github.event_name != 'pull_request' || steps.changes.outputs.image == 'true'
+        uses: docker/build-push-action@v7
+        with:
+          context: .
+          platforms: linux/amd64
+          load: true
+          tags: i-wish-i-knew:scan
+          provenance: false
+          sbom: false
+          cache-from: type=gha
+      - name: Trivy scan (HIGH/CRITICAL, fixable only)
+        if: github.event_name != 'pull_request' || steps.changes.outputs.image == 'true'
+        uses: aquasecurity/trivy-action@v0.36.0
+        with:
+          scan-type: image
+          image-ref: i-wish-i-knew:scan
+          scanners: vuln
+          severity: HIGH,CRITICAL
+          ignore-unfixed: true
+          exit-code: '1'
+          format: table
