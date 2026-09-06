@@ -1,17 +1,33 @@
-// Member console: one server-rendered page (ADR-0001). Shows the product,
-// the ADR-0002 trust-boundary statement, the evidence revision, and for a
-// node signed in with its token (simple session cookie for now; stage 6
-// brings real console sign-in) its organization's accepted-run count and
-// last receipt id.
+// Member console (ADR-0001): server-rendered pages with plain HTML forms.
+//
+// `/` shows the product, the ADR-0002 trust-boundary statement, the evidence
+// revision, and for a signed-in organization or node its accepted-run count
+// and last receipt id. Sign-in comes in two forms:
+//   - node token on `/` (stage 2; still works with enrollment off), and
+//   - organization name + console password at `/console/login` (stage 6,
+//     only with IWIK_FEATURE_ENROLLMENT=on), which unlocks `/org`.
+// Both produce the same signed session cookie (session.ts). Enrollment
+// pages live in modules/enrollment.
 import { join } from 'node:path';
-import type { FastifyInstance, FastifyRequest } from 'fastify';
+import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import { serviceRoot } from '../../config.js';
 import type { Config } from '../../config.js';
 import type { Pool } from '../../db.js';
-import { authenticateByHash, hashToken } from '../identity/index.js';
-import type { AuthContext } from '../identity/index.js';
+import { ApiError } from '../../errors.js';
+import {
+  audit,
+  authenticateByHash,
+  findConsoleLoginByOrgName,
+  hashToken,
+} from '../identity/index.js';
+import { DUMMY_HASH, PASSWORD_MAX_LENGTH, verifyPassword } from '../identity/password.js';
+import { FailureWindow } from '../identity/ratelimit.js';
 import { currentRevision } from '../intake/index.js';
 import type { Registry } from '../registry/index.js';
+import { clearSession, csrfToken, requireCsrf, resolveSession, setSession } from './session.js';
+import type { Session } from './session.js';
+
+export { SESSION_COOKIE } from './session.js';
 
 export const PRODUCT_NAME = 'I Wish I Knew';
 
@@ -21,56 +37,77 @@ export const TRUST_BOUNDARY_STATEMENT =
   'but service operators are inside the trust boundary during the pilot. ' +
   'Operator exclusion is a gate before the first real-member release, not a current guarantee.';
 
-export const SESSION_COOKIE = 'iwik_session';
 /** packages/service/views: shipped as files, not compiled, so src/ and dist/ share it. */
 export const viewsDir = join(serviceRoot, 'views');
+
+export const ORG_NAME_MAX_LENGTH = 120;
 
 export interface ConsoleDeps {
   pool: Pool;
   config: Config;
   registry: Registry;
+  /** Shared with tests so the window can be inspected; one per process. */
+  loginFailures?: FailureWindow;
 }
 
 interface SessionView {
+  kind: 'org' | 'node';
   org_name: string;
-  node_id: string;
+  node_id: string | null;
   accepted_runs: number;
   last_receipt_id: string | null;
 }
 
-async function sessionFromCookie(
-  request: FastifyRequest,
-  deps: ConsoleDeps,
-): Promise<AuthContext | undefined> {
-  const raw = request.cookies[SESSION_COOKIE];
-  if (raw === undefined) return undefined;
-  const unsigned = request.unsignCookie(raw);
-  if (!unsigned.valid || unsigned.value === null) return undefined;
-  return authenticateByHash(deps.pool, unsigned.value);
-}
-
-async function sessionView(auth: AuthContext, deps: ConsoleDeps): Promise<SessionView> {
+async function sessionView(session: Session, deps: ConsoleDeps): Promise<SessionView> {
+  const orgRef =
+    session.kind === 'node'
+      ? session.auth.org_ref
+      : (
+          await deps.pool.query<{ org_ref: string }>(
+            `SELECT org_ref FROM identity.org_refs WHERE org_id = $1`,
+            [session.org_id],
+          )
+        ).rows[0]?.org_ref;
   const runs = await deps.pool.query<{ n: string | number }>(
     `SELECT count(*) AS n FROM evidence.runs WHERE org_ref = $1`,
-    [auth.org_ref],
+    [orgRef ?? ''],
   );
   const receipt = await deps.pool.query<{ receipt_id: string }>(
     `SELECT receipt_id FROM evidence.receipts WHERE org_ref = $1
       ORDER BY issued_at DESC, receipt_id DESC LIMIT 1`,
-    [auth.org_ref],
+    [orgRef ?? ''],
   );
   return {
-    org_name: auth.org_name,
-    node_id: auth.node_id,
+    kind: session.kind,
+    org_name: session.kind === 'node' ? session.auth.org_name : session.org_name,
+    node_id: session.kind === 'node' ? session.auth.node_id : null,
     accepted_runs: Number(runs.rows[0]?.n ?? 0),
     last_receipt_id: receipt.rows[0]?.receipt_id ?? null,
   };
 }
 
+/** Pre-handler: 404 (the standard envelope) unless enrollment is on. */
+export function requireEnrollment(
+  config: Config,
+): (request: FastifyRequest, reply: FastifyReply) => Promise<void> {
+  return async () => {
+    if (!config.featureEnrollment) throw new ApiError(404, 'not_found');
+  };
+}
+
+function formString(body: unknown, field: string, max: number): string {
+  if (typeof body !== 'object' || body === null) return '';
+  const value = (body as Record<string, unknown>)[field];
+  return typeof value === 'string' ? value.slice(0, max) : '';
+}
+
 export function registerConsoleRoutes(app: FastifyInstance, deps: ConsoleDeps): void {
+  const failures = deps.loginFailures ?? new FailureWindow();
+  const enrollmentOn = deps.config.featureEnrollment;
+
   app.get<{ Querystring: { login?: string } }>('/', async (request, reply) => {
-    const auth = await sessionFromCookie(request, deps);
-    const session = auth === undefined ? null : await sessionView(auth, deps);
+    const session = await resolveSession(request, deps.config, deps.pool);
+    const view = session === undefined ? null : await sessionView(session, deps);
     const revision = await currentRevision(deps.pool);
     return reply.view('index', {
       product: PRODUCT_NAME,
@@ -78,32 +115,80 @@ export function registerConsoleRoutes(app: FastifyInstance, deps: ConsoleDeps): 
       evidence_revision: revision,
       protocols: deps.registry.list().map((e) => e.protocol.ref),
       intake_enabled: deps.config.featureIntake,
-      session,
+      enrollment_enabled: enrollmentOn,
+      session: view,
       login_failed: request.query.login === 'failed',
+      csrf: csrfToken(request, reply, deps.config),
     });
   });
 
+  // Stage 2 sign-in: a node token. The cookie carries the token hash only.
   app.post<{ Body: { token?: string } }>('/console/session', async (request, reply) => {
+    requireCsrf(request, deps.config);
     const token = typeof request.body?.token === 'string' ? request.body.token.trim() : '';
     const auth = token === '' ? undefined : await authenticateByHash(deps.pool, hashToken(token));
     if (auth === undefined) {
       request.log.info('console sign-in failed');
       return reply.redirect('/?login=failed', 303);
     }
-    reply.setCookie(SESSION_COOKIE, hashToken(token), {
-      signed: true,
-      httpOnly: true,
-      sameSite: 'strict',
-      secure: deps.config.production,
-      path: '/',
-      maxAge: 8 * 60 * 60,
-    });
+    setSession(reply, deps.config, { kind: 'node', token_hash: hashToken(token) });
     request.log.info({ org_ref: auth.org_ref }, 'console sign-in');
     return reply.redirect('/', 303);
   });
 
-  app.post('/console/logout', async (_request, reply) => {
-    reply.clearCookie(SESSION_COOKIE, { path: '/' });
+  // Stage 6 sign-in: organization name + console password, rate limited.
+  app.get<{ Querystring: { login?: string } }>(
+    '/console/login',
+    { preHandler: requireEnrollment(deps.config) },
+    async (request, reply) => {
+      const session = await resolveSession(request, deps.config, deps.pool);
+      if (session?.kind === 'org') return reply.redirect('/org', 303);
+      return reply.view('login', {
+        product: PRODUCT_NAME,
+        login_failed: request.query.login === 'failed',
+        csrf: csrfToken(request, reply, deps.config),
+      });
+    },
+  );
+
+  app.post(
+    '/console/login',
+    { preHandler: requireEnrollment(deps.config) },
+    async (request, reply) => {
+      requireCsrf(request, deps.config);
+      const orgName = formString(request.body, 'organization', ORG_NAME_MAX_LENGTH).trim();
+      const password = formString(request.body, 'password', PASSWORD_MAX_LENGTH);
+      const ip = request.ip;
+      const retryAfter = failures.retryAfterSeconds(orgName, ip);
+      if (retryAfter > 0) {
+        request.log.info('console login rate limited');
+        throw new ApiError(429, 'rate_limited', { headers: { 'retry-after': String(retryAfter) } });
+      }
+      const login =
+        orgName === '' ? undefined : await findConsoleLoginByOrgName(deps.pool, orgName);
+      // Always run scrypt so an unknown organization costs the same as a wrong password.
+      const ok =
+        verifyPassword(password, login?.password_hash ?? DUMMY_HASH) && login !== undefined;
+      if (!ok) {
+        failures.recordFailure(orgName, ip);
+        request.log.info('console login failed');
+        return reply.redirect('/console/login?login=failed', 303);
+      }
+      failures.clear(orgName, ip);
+      setSession(reply, deps.config, {
+        kind: 'org',
+        login_id: login.login_id,
+        org_id: login.org_id,
+      });
+      await audit(deps.pool, 'console.login', `login:${login.login_id}`, `org:${login.org_id}`);
+      request.log.info({ org_id: login.org_id }, 'console login');
+      return reply.redirect('/org', 303);
+    },
+  );
+
+  app.post('/console/logout', async (request, reply) => {
+    requireCsrf(request, deps.config);
+    clearSession(reply);
     return reply.redirect('/', 303);
   });
 }
