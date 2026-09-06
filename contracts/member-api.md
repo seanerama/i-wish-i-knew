@@ -96,6 +96,7 @@ the endpoint table above and do not change any listed semantics.
 | Method and path | Scope | Purpose |
 |---|---|---|
 | `POST /v1/admin/organizations` | operator (`IWIK_OPERATOR_TOKEN`, not a node token) | create an organization and its one-time enrollment invite; returns the invite URL once; `409` if the display name exists |
+| `GET /v1/admin/cohorts?protocol_ref=&filter.<key>=<value>` | operator | (recorded from stage 8) cohort preview as RANGES only: `orgs` in `<3|3-5|6-10|11+`, `runs` in `<5|5-10|11-50|51+`, `max_org_share` in `<=50%|>50%`; `422 not_indexed` for a filter key outside the protocol's `required_context`; `404 feature_disabled` while `IWIK_FEATURE_DEDUPE` is off |
 | `POST /v1/admin/organizations/{org_id}/invites` | operator | (recorded from stage 11) re-invite an existing organization: returns a one-time invite URL with `kind: "reset"` (console password reset, nodes and tokens kept) or `kind: "enroll"` if the organization never completed enrollment; `404` unknown org; `409 invite_exists` while any unexpired invite is open |
 
 Operator scope is distinct from node scopes and never grants evidence access.
@@ -114,6 +115,11 @@ member surfaces behind `IWIK_FEATURE_ENROLLMENT` and are not part of the JSON AP
 - When `IWIK_FEATURE_WITHDRAWAL` is off the endpoint answers `404` with error code `feature_disabled`.
 - `GET /v1/runs/{run_id}` additionally returns `withdrawn_at` and `withdrawn_revision` (null until withdrawn) and `sharing_policy`.
 - Receipt staleness: a `query`-kind receipt reads `status: "stale"` once any later evidence revision has affected its `protocol_ref` (new intake or withdrawal). Intake receipts never go stale.
+
+## Intake receipt additions (additive, recorded 2026-09-06 from stage 8)
+
+- An intake receipt may carry `status: "duplicate"` with `duplicate_of: "<run_id>"` when the same measurement digest was already accepted from the caller's own organization. Duplicates are stored, count toward nothing, and do not bump the evidence revision.
+- A submitter is never told whether its measurement matched another organization's.
 
 ## Versioning
 
