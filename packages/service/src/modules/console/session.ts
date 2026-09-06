@@ -14,7 +14,10 @@
 //
 // CSRF: double-submit with a signed cookie. `iwik_csrf` holds
 // `<nonce>.<hmac(nonce)>`; every form carries the nonce in `_csrf`; a POST is
-// accepted only when the cookie verifies and equals the field.
+// accepted only when the cookie verifies and equals the field. The nonce is
+// rotated whenever a session is established (stage 11): a nonce that existed
+// before sign-in is refused afterwards, so a value planted or observed before
+// authentication does not carry into the authenticated session.
 import { createHmac, randomBytes, timingSafeEqual } from 'node:crypto';
 import type { FastifyReply, FastifyRequest } from 'fastify';
 import type { Config } from '../../config.js';
@@ -96,6 +99,7 @@ export function setSession(reply: FastifyReply, config: Config, payload: NewSess
     sealSession(config.sessionKey, full),
     cookieOptions(config, SESSION_TTL_SECONDS),
   );
+  rotateCsrf(reply, config);
 }
 
 export function clearSession(reply: FastifyReply): void {
@@ -127,6 +131,11 @@ export async function resolveSession(
 export function csrfToken(request: FastifyRequest, reply: FastifyReply, config: Config): string {
   const existing = verifiedCsrfCookie(request, config);
   if (existing !== undefined) return existing;
+  return rotateCsrf(reply, config);
+}
+
+/** Issue a fresh CSRF nonce on this response, replacing whatever the client held. */
+export function rotateCsrf(reply: FastifyReply, config: Config): string {
   const nonce = randomBytes(24).toString('base64url');
   reply.setCookie(
     CSRF_COOKIE,

@@ -31,8 +31,10 @@ export interface AppContext {
   envelope: Envelope;
   /** Every registered route, for the OpenAPI coverage test. */
   routes: Array<{ method: string; url: string }>;
-  /** Console login failure window (stage 6 rate limit); per process. */
+  /** Console login failure window per organization + IP (stage 6 rate limit); per process. */
   loginFailures: FailureWindow;
+  /** Console login failure window per IP alone (stage 11); per process. */
+  loginIpFailures: FailureWindow;
 }
 
 declare module 'fastify' {
@@ -51,6 +53,7 @@ export async function buildApp(config: Config): Promise<FastifyInstance> {
   const envelope = new Envelope(pool, config.kek);
   const routes: AppContext['routes'] = [];
   const loginFailures = new FailureWindow();
+  const loginIpFailures = new FailureWindow();
 
   const app = Fastify({
     logger: loggerOptions(config),
@@ -61,7 +64,15 @@ export async function buildApp(config: Config): Promise<FastifyInstance> {
     // rule: the socket peer is hop 0, each X-Forwarded-For entry one more.
     trustProxy: config.trustProxy > 0 ? trustHops(config.trustProxy) : false,
   });
-  app.decorate('iwik', { config, pool, registry, envelope, routes, loginFailures });
+  app.decorate('iwik', {
+    config,
+    pool,
+    registry,
+    envelope,
+    routes,
+    loginFailures,
+    loginIpFailures,
+  });
   app.addHook('onRoute', (route) => {
     const methods = Array.isArray(route.method) ? route.method : [route.method];
     for (const method of methods) {
@@ -85,7 +96,7 @@ export async function buildApp(config: Config): Promise<FastifyInstance> {
   registerRegistryRoutes(app, registry);
   registerIntakeRoutes(app, { pool, envelope, registry, config });
   registerAggregateRoutes(app, { pool, registry });
-  registerConsoleRoutes(app, { pool, config, registry, loginFailures });
+  registerConsoleRoutes(app, { pool, config, registry, loginFailures, loginIpFailures });
   registerEnrollmentRoutes(app, { pool, config });
 
   const openapi = buildOpenApi();

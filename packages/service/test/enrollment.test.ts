@@ -3,7 +3,9 @@
 // rate limiting, node registration in both key formats, tokens shown once and
 // stored hashed, two-organization isolation (404, never 403), revocation of
 // tokens and nodes, the scope matrix, CSRF, audit hygiene, and the
-// IWIK_FEATURE_ENROLLMENT kill switch.
+// IWIK_FEATURE_ENROLLMENT kill switch. Stage 11: operator re-invite and the
+// console password reset it unlocks, the per-IP login window, and CSRF nonce
+// rotation on sign-in.
 import assert from 'node:assert/strict';
 import { after, before, test } from 'node:test';
 import type { Run } from '@iwik/contracts';
@@ -19,6 +21,7 @@ import {
   bootEnrollmentApp,
   browse,
   createInvite,
+  createResetInvite,
   enrollOrganization,
   enrollWithNode,
   generateNodeKey,
@@ -29,6 +32,8 @@ import {
   preview,
   pubkeyPem,
   registerNode,
+  reinvite,
+  resetPassword,
   signRun,
   submit,
   submitRun,
@@ -333,13 +338,393 @@ test('console login: wrong password fails, right password lands on /org, 6th fai
   assert.equal(attacker.get('iwik_session'), undefined);
   assert.ok(!sixth.body.includes(org.password) && !sixth.body.includes(org.name));
 
-  // a different address is not blocked; a different organization from the same address is not either
+  // a different address is not blocked; the same address is blocked for every
+  // organization name too (the stage 11 per-IP window has the same five failures)
   const elsewhere = new CookieJar('203.0.113.8');
   const other = await loginOrganization(t, elsewhere, org.name, 'still wrong');
   assert.equal(other.statusCode, 303);
   const otherOrg = new CookieJar('203.0.113.7');
   const unrelated = await loginOrganization(t, otherOrg, 'Bootstrap Org', 'still wrong');
-  assert.equal(unrelated.statusCode, 303);
+  assert.equal(unrelated.statusCode, 429);
+});
+
+test('per-IP login window: five failures under different organization names from one address block the sixth', async () => {
+  const org = await enrollOrganization(t, 'IP Bucket Org');
+  const attacker = new CookieJar('203.0.113.40');
+  for (let i = 1; i <= 5; i++) {
+    const res = await loginOrganization(t, attacker, `Guess Org ${i}`, `guess number ${i}`);
+    assert.equal(res.statusCode, 303, `attempt ${i}`);
+    assert.equal(res.headers.location, '/console/login?login=failed');
+  }
+  const sixth = await loginOrganization(t, attacker, org.name, org.password);
+  assert.equal(sixth.statusCode, 429);
+  assert.equal(sixth.json<{ error: { code: string } }>().error.code, 'rate_limited');
+  assert.match(String(sixth.headers['retry-after']), /^[1-9][0-9]?$/);
+  assert.equal(attacker.get('iwik_session'), undefined);
+  assert.ok(!sixth.body.includes(org.password) && !sixth.body.includes(org.name));
+  // the per-organization window for that name is untouched: another address signs in
+  const elsewhere = new CookieJar('203.0.113.41');
+  const ok = await loginOrganization(t, elsewhere, org.name, org.password);
+  assert.equal(ok.statusCode, 303);
+  assert.equal(ok.headers.location, '/org');
+});
+
+test('csrf nonce rotates when a session is established: the pre-login nonce is refused afterwards', async () => {
+  const org = await enrollOrganization(t, 'Rotate Org');
+
+  // console password sign-in
+  const jar = new CookieJar('203.0.113.42');
+  await browse(t, jar, '/console/login');
+  const before = jar.csrf();
+  assert.ok(before);
+  const login = await postForm(t, jar, '/console/login', {
+    organization: org.name,
+    password: org.password,
+  });
+  assert.equal(login.statusCode, 303);
+  assert.equal(login.headers.location, '/org');
+  assert.match(String(login.headers['set-cookie']), /iwik_csrf=/);
+  const after = jar.csrf();
+  assert.ok(after);
+  assert.notEqual(after, before);
+  const key = generateNodeKey();
+  const stale = await postForm(t, jar, '/org/nodes', { pubkey: key.pubkey }, { csrf: before });
+  assert.equal(stale.statusCode, 403);
+  assert.equal(stale.json<{ error: { code: string } }>().error.code, 'csrf_failed');
+  const current = await postForm(t, jar, '/org/nodes', { pubkey: key.pubkey });
+  assert.equal(current.statusCode, 303);
+  assert.equal(current.headers.location, '/org?notice=node_registered');
+
+  // a failed sign-in does not rotate
+  const failing = new CookieJar('203.0.113.43');
+  await browse(t, failing, '/console/login');
+  const unchanged = failing.csrf();
+  const failed = await postForm(t, failing, '/console/login', {
+    organization: org.name,
+    password: 'not the password',
+  });
+  assert.equal(failed.headers.location, '/console/login?login=failed');
+  assert.equal(failing.csrf(), unchanged);
+
+  // enrollment establishes a session, so it rotates too
+  const invite = await createInvite(t, 'Rotate Enroll Org');
+  const enrolling = new CookieJar('203.0.113.44');
+  await browse(t, enrolling, invite.invite_path);
+  const preEnroll = enrolling.csrf();
+  const password = 'rotate enroll org password';
+  const enrolled = await postForm(t, enrolling, invite.invite_path, {
+    display_name: 'Rotate Enroll Org',
+    password,
+    password_confirm: password,
+    agree_terms: 'on',
+    agree_trust_boundary: 'on',
+    agree_reciprocity: 'on',
+  });
+  assert.equal(enrolled.headers.location, '/org?notice=enrolled');
+  assert.notEqual(enrolling.csrf(), preEnroll);
+
+  // and so does the stage-2 node-token sign-in on /
+  const node = new CookieJar('203.0.113.45');
+  await browse(t, node, '/');
+  const preNode = node.csrf();
+  const signedIn = await postForm(t, node, '/console/session', { token: t.token });
+  assert.equal(signedIn.headers.location, '/');
+  assert.notEqual(node.csrf(), preNode);
+});
+
+test('reset invite: new console password, old one fails, nodes and tokens intact, one organization row', async () => {
+  const { pool } = t.app.iwik;
+  const org = await enrollWithNode(t, 'Reset Org');
+  const tokenStatus = async () =>
+    (await t.app.inject({ method: 'GET', url: '/v1/protocols', headers: authHeader(org.token) }))
+      .statusCode;
+  assert.equal(await tokenStatus(), 200);
+
+  // only the operator token, only for a known organization
+  const anon = await t.app.inject({
+    method: 'POST',
+    url: `/v1/admin/organizations/${org.org_id}/invites`,
+  });
+  assert.equal(anon.statusCode, 401);
+  assert.equal((await reinvite(t, org.org_id, org.token)).statusCode, 401);
+  const unknown = await reinvite(t, '01ARZ3NDEKTSV4RRFFQ69G5ZZZ');
+  assert.equal(unknown.statusCode, 404);
+  assert.equal(unknown.json<{ error: { code: string } }>().error.code, 'not_found');
+  assert.equal((await reinvite(t, 'not-an-organization-id')).statusCode, 404);
+
+  const invite = await createResetInvite(t, org.org_id);
+  assert.equal(invite.kind, 'reset');
+  assert.equal(invite.org_id, org.org_id);
+  assert.match(invite.invite_path, /^\/enroll\/[A-Za-z0-9_-]{43}$/);
+  // a second unexpired reset invite is refused, without echoing anything
+  const dup = await reinvite(t, org.org_id);
+  assert.equal(dup.statusCode, 409);
+  assert.equal(dup.json<{ error: { code: string } }>().error.code, 'invite_exists');
+  assert.ok(!dup.body.includes(org.name));
+  const invites = await pool.query<{ kind: string; accepted: boolean; invite_hash: string }>(
+    `SELECT kind, accepted_at IS NOT NULL AS accepted, invite_hash FROM identity.invites
+      WHERE org_id = $1 ORDER BY created_at, invite_hash`,
+    [org.org_id],
+  );
+  assert.deepEqual(
+    invites.rows.map((r) => [r.kind, r.accepted]),
+    [
+      ['enroll', true],
+      ['reset', false],
+    ],
+  );
+  const inviteToken = invite.invite_path.slice('/enroll/'.length);
+  for (const r of invites.rows) assert.notEqual(r.invite_hash, inviteToken);
+
+  // the page: name read-only, no display-name field, terms unchanged so no checkboxes
+  const jar = new CookieJar('203.0.113.31');
+  const page = await browse(t, jar, invite.invite_path);
+  assert.equal(page.statusCode, 200);
+  assert.match(page.body, /id="reset-form"/);
+  assert.match(page.body, /id="display-name">Reset Org</);
+  assert.ok(!page.body.includes('name="display_name"'));
+  assert.ok(!page.body.includes('name="agree_terms"'));
+  assert.match(page.body, /id="terms-unchanged"/);
+  assert.ok(page.body.includes(`id="terms-version">${PILOT_TERMS_VERSION}<`));
+  assert.match(page.body, /autocomplete="new-password"/);
+  assert.match(page.body, /reset invite/);
+
+  // rejected forms leave the invite open and echo nothing
+  const newPassword = 'a brand new console password';
+  const short = await postForm(t, jar, invite.invite_path, {
+    password: 'short',
+    password_confirm: 'short',
+  });
+  assert.equal(short.statusCode, 400);
+  assert.match(short.body, /id="enroll-error"/);
+  const mismatch = await postForm(t, jar, invite.invite_path, {
+    password: newPassword,
+    password_confirm: newPassword + '!',
+  });
+  assert.equal(mismatch.statusCode, 400);
+  assert.ok(!mismatch.body.includes(newPassword));
+  const noCsrf = await postForm(
+    t,
+    jar,
+    invite.invite_path,
+    { password: newPassword, password_confirm: newPassword },
+    { csrf: null },
+  );
+  assert.equal(noCsrf.statusCode, 403);
+  const stillOpen = await pool.query(
+    `SELECT 1 FROM identity.invites WHERE org_id = $1 AND kind = 'reset' AND accepted_at IS NULL`,
+    [org.org_id],
+  );
+  assert.equal(stillOpen.rows.length, 1);
+
+  // accept; a submitted display name is not a field on a reset and is ignored
+  const ok = await postForm(t, jar, invite.invite_path, {
+    display_name: 'Renamed By Reset',
+    password: newPassword,
+    password_confirm: newPassword,
+  });
+  assert.equal(ok.statusCode, 303, ok.body);
+  assert.equal(ok.headers.location, '/org?notice=password_reset');
+  assert.match(String(ok.headers['set-cookie']), /iwik_session=/);
+  assert.ok(!String(ok.headers['set-cookie']).includes(newPassword));
+  const landed = await browse(t, jar, String(ok.headers.location));
+  assert.equal(landed.statusCode, 200);
+  assert.match(landed.body, /id="org-name">Reset Org</);
+  assert.match(landed.body, /id="notice">/);
+  assert.match(landed.body, /Console password set/);
+  assert.ok(landed.body.includes(`id="node-${org.node_id}"`));
+  assert.ok(landed.body.includes(`id="token-${org.token_id}"`));
+  assert.ok(!landed.body.includes(org.token));
+
+  // the invite is consumed
+  assert.equal((await browse(t, new CookieJar(), invite.invite_path)).statusCode, 404);
+  const reuse = await postForm(t, new CookieJar(), invite.invite_path, {
+    password: newPassword,
+    password_confirm: newPassword,
+  });
+  assert.equal(reuse.statusCode, 404);
+
+  // the session signed in with the old login is over; the old password fails; the new one works
+  const stale = await browse(t, org.jar, '/org');
+  assert.equal(stale.statusCode, 303);
+  assert.equal(stale.headers.location, '/console/login');
+  const oldPassword = await loginOrganization(
+    t,
+    new CookieJar('203.0.113.32'),
+    org.name,
+    org.password,
+  );
+  assert.equal(oldPassword.headers.location, '/console/login?login=failed');
+  const fresh = new CookieJar('203.0.113.33');
+  const newLogin = await loginOrganization(t, fresh, org.name, newPassword);
+  assert.equal(newLogin.statusCode, 303);
+  assert.equal(newLogin.headers.location, '/org');
+
+  // nothing else moved: one organization row, the node and its token, one agreement
+  assert.equal(await tokenStatus(), 200);
+  const orgs = await pool.query(`SELECT 1 FROM identity.organizations WHERE name = $1`, [org.name]);
+  assert.equal(orgs.rows.length, 1);
+  const nodes = await pool.query<{ node_id: string; revoked: boolean }>(
+    `SELECT node_id, revoked_at IS NOT NULL AS revoked FROM identity.nodes WHERE org_id = $1`,
+    [org.org_id],
+  );
+  assert.deepEqual(nodes.rows, [{ node_id: org.node_id, revoked: false }]);
+  const tokens = await pool.query<{ token_id: string; revoked: boolean }>(
+    `SELECT t.token_id, t.revoked_at IS NOT NULL AS revoked FROM identity.tokens t
+       JOIN identity.nodes n USING (node_id) WHERE n.org_id = $1`,
+    [org.org_id],
+  );
+  assert.deepEqual(tokens.rows, [{ token_id: org.token_id, revoked: false }]);
+  const logins = await pool.query<{ revoked: boolean; password_hash: string }>(
+    `SELECT revoked_at IS NOT NULL AS revoked, password_hash FROM identity.console_logins
+      WHERE org_id = $1 ORDER BY created_at, login_id`,
+    [org.org_id],
+  );
+  assert.deepEqual(
+    logins.rows.map((l) => l.revoked),
+    [true, false],
+  );
+  assert.notEqual(logins.rows[0]?.password_hash, logins.rows[1]?.password_hash);
+  for (const l of logins.rows) {
+    assert.match(l.password_hash, /^scrypt\$/);
+    assert.ok(!l.password_hash.includes(newPassword));
+  }
+  const agreements = await pool.query(`SELECT 1 FROM identity.agreements WHERE org_id = $1`, [
+    org.org_id,
+  ]);
+  assert.equal(agreements.rows.length, 1);
+
+  // audit: identifiers only
+  const audit = await t.app.iwik.pool.query<{ event: string; actor: string; target: string }>(
+    `SELECT event, actor, target FROM identity.audit WHERE target = $1 ORDER BY at, audit_id`,
+    [`org:${org.org_id}`],
+  );
+  const events = audit.rows.map((r) => r.event);
+  assert.ok(events.includes('org.reinvited'));
+  assert.ok(events.includes('console.password_reset'));
+  const reinvited = audit.rows.find((r) => r.event === 'org.reinvited');
+  assert.equal(reinvited?.actor, 'operator');
+  const reset = audit.rows.find((r) => r.event === 'console.password_reset');
+  assert.match(reset?.actor ?? '', /^login:[0-9A-HJKMNP-TV-Z]{26}$/);
+  const text = JSON.stringify(audit.rows);
+  for (const forbidden of [org.password, newPassword, org.token, inviteToken]) {
+    assert.ok(!text.includes(forbidden));
+  }
+
+  // consumed, so the operator can issue the next one
+  const again = await createResetInvite(t, org.org_id);
+  assert.equal(again.kind, 'reset');
+});
+
+test('reset invite: a changed pilot terms version is asked again and recorded once', async () => {
+  const { pool } = t.app.iwik;
+  const org = await enrollOrganization(t, 'Terms Reset Org');
+  // the organization agreed to an earlier version than the one now in force
+  await pool.query(`UPDATE identity.agreements SET terms_version = $2 WHERE org_id = $1`, [
+    org.org_id,
+    '2026-08-pilot-0',
+  ]);
+  const invite = await createResetInvite(t, org.org_id);
+  assert.equal(invite.kind, 'reset');
+  const jar = new CookieJar('203.0.113.34');
+  const page = await browse(t, jar, invite.invite_path);
+  assert.equal(page.statusCode, 200);
+  assert.match(page.body, /id="terms-changed"/);
+  assert.ok(!page.body.includes('id="terms-unchanged"'));
+  assert.match(page.body, /name="agree_terms"/);
+  assert.match(page.body, /name="agree_trust_boundary"/);
+  assert.match(page.body, /name="agree_reciprocity"/);
+  assert.ok(page.body.includes(escapeHtml(PILOT_CLAUSES.trust_boundary)));
+  assert.ok(!page.body.includes('name="display_name"'));
+
+  const password = 'terms changed new password';
+  const missing = await postForm(t, jar, invite.invite_path, {
+    password,
+    password_confirm: password,
+    agree_terms: 'on',
+    agree_trust_boundary: 'on',
+  });
+  assert.equal(missing.statusCode, 400);
+  assert.match(missing.body, /Every clause must be accepted/);
+
+  const ok = await resetPassword(t, jar, invite.invite_path, password);
+  assert.equal(ok.statusCode, 303, ok.body);
+  assert.equal(ok.headers.location, '/org?notice=password_reset');
+  const agreements = await pool.query<{
+    terms_version: string;
+    clauses: string[];
+    login_id: string;
+  }>(
+    `SELECT terms_version, clauses, login_id FROM identity.agreements WHERE org_id = $1
+      ORDER BY accepted_at, agreement_id`,
+    [org.org_id],
+  );
+  assert.deepEqual(
+    agreements.rows.map((a) => a.terms_version),
+    ['2026-08-pilot-0', PILOT_TERMS_VERSION],
+  );
+  assert.deepEqual(agreements.rows[1]?.clauses, ['terms', 'trust_boundary', 'reciprocity']);
+  const live = await pool.query<{ login_id: string }>(
+    `SELECT login_id FROM identity.console_logins WHERE org_id = $1 AND revoked_at IS NULL`,
+    [org.org_id],
+  );
+  assert.equal(agreements.rows[1]?.login_id, live.rows[0]?.login_id);
+
+  // a further reset with the terms unchanged records nothing new
+  const next = await createResetInvite(t, org.org_id);
+  const again = await resetPassword(t, new CookieJar('203.0.113.35'), next.invite_path, password);
+  assert.equal(again.statusCode, 303, again.body);
+  const count = await pool.query(`SELECT 1 FROM identity.agreements WHERE org_id = $1`, [
+    org.org_id,
+  ]);
+  assert.equal(count.rows.length, 2);
+});
+
+test('re-invite of an organization that never enrolled: 409 while its invite is open, a fresh enroll invite once it expired', async () => {
+  const { pool } = t.app.iwik;
+  const first = await createInvite(t, 'Never Enrolled Org');
+  const open = await reinvite(t, first.org_id);
+  assert.equal(open.statusCode, 409);
+  assert.equal(open.json<{ error: { code: string } }>().error.code, 'invite_exists');
+
+  await pool.query(
+    `UPDATE identity.invites SET expires_at = now() - interval '1 second' WHERE org_id = $1`,
+    [first.org_id],
+  );
+  assert.equal((await browse(t, new CookieJar(), first.invite_path)).statusCode, 404);
+  const again = await createResetInvite(t, first.org_id);
+  assert.equal(again.kind, 'enroll');
+  assert.notEqual(again.invite_path, first.invite_path);
+
+  const jar = new CookieJar('203.0.113.36');
+  const page = await browse(t, jar, again.invite_path);
+  assert.equal(page.statusCode, 200);
+  assert.match(page.body, /id="enroll-form"/);
+  assert.match(page.body, /name="display_name"/);
+  assert.match(page.body, /name="agree_terms"/);
+  const password = 'never enrolled org password';
+  const ok = await postForm(t, jar, again.invite_path, {
+    display_name: 'Never Enrolled Org',
+    password,
+    password_confirm: password,
+    agree_terms: 'on',
+    agree_trust_boundary: 'on',
+    agree_reciprocity: 'on',
+  });
+  assert.equal(ok.statusCode, 303, ok.body);
+  assert.equal(ok.headers.location, '/org?notice=enrolled');
+  const orgs = await pool.query(`SELECT 1 FROM identity.organizations WHERE name = $1`, [
+    'Never Enrolled Org',
+  ]);
+  assert.equal(orgs.rows.length, 1);
+  const logins = await pool.query(`SELECT 1 FROM identity.console_logins WHERE org_id = $1`, [
+    first.org_id,
+  ]);
+  assert.equal(logins.rows.length, 1);
+
+  // now enrolled, the next re-invite is a reset
+  const reset = await createResetInvite(t, first.org_id);
+  assert.equal(reset.kind, 'reset');
 });
 
 test('two organizations enroll, register nodes (base64 and PEM), issue tokens, and are isolated (404 not 403)', async () => {
@@ -729,6 +1114,24 @@ test('migration is additive and re-runnable: identity tables present, legacy tok
     ['01ARZ3NDEKTSV4RRFFQ69G5N0D'],
   );
   assert.match(seed.rows[0]?.token_id ?? '', /^[0-9A-HJKMNP-TV-Z]{26}$/);
+  // stage 11: invites carry a kind, default enroll, constrained to enroll | reset
+  const kind = await pool.query<{ column_default: string; is_nullable: string }>(
+    `SELECT column_default, is_nullable FROM information_schema.columns
+      WHERE table_schema = 'identity' AND table_name = 'invites' AND column_name = 'kind'`,
+  );
+  assert.equal(kind.rows[0]?.column_default, "'enroll'::text");
+  assert.equal(kind.rows[0]?.is_nullable, 'NO');
+  const anyOrg = await pool.query<{ org_id: string }>(
+    `SELECT org_id FROM identity.organizations LIMIT 1`,
+  );
+  await assert.rejects(
+    pool.query(
+      `INSERT INTO identity.invites (invite_hash, org_id, kind, expires_at)
+       VALUES ($2, $1, 'bogus', now())`,
+      [anyOrg.rows[0]?.org_id, '0'.repeat(64)],
+    ),
+    /invites_kind_check/,
+  );
   const ready = await t.app.inject({ method: 'GET', url: '/readyz' });
   assert.equal(ready.statusCode, 200);
 });

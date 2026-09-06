@@ -1,8 +1,9 @@
 // Identity (ADR-0006): organizations, nodes, hashed bearer tokens with scopes.
 // Stage 2 seeds one organization and node from the environment; stage 6 adds
 // enrollment (invites, console logins, agreements, audit) behind
-// IWIK_FEATURE_ENROLLMENT. The evidence schema never sees org_id, only the
-// opaque org_ref minted here.
+// IWIK_FEATURE_ENROLLMENT; stage 11 adds reset invites (a new console
+// password for an enrolled organization). The evidence schema never sees
+// org_id, only the opaque org_ref minted here.
 import { createHash, createPublicKey, randomBytes, timingSafeEqual } from 'node:crypto';
 import type { KeyObject } from 'node:crypto';
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
@@ -291,12 +292,14 @@ export async function revokeNode(db: Queryable, orgId: string, nodeId: string): 
 
 export type AuditEvent =
   | 'org.invited'
+  | 'org.reinvited'
   | 'org.enrolled'
   | 'node.registered'
   | 'node.revoked'
   | 'token.issued'
   | 'token.revoked'
-  | 'console.login';
+  | 'console.login'
+  | 'console.password_reset';
 
 /** Identifiers only: who (operator / login id) did what to which id. */
 export async function audit(
@@ -314,9 +317,16 @@ export async function audit(
 // ---------------------------------------------------------------------------
 // Stage 6: invites, console logins, agreements.
 
+/**
+ * `enroll`: the one-time enrollment invite (stage 6). `reset`: a one-time
+ * console password reset for an organization that already enrolled (stage 11).
+ */
+export type InviteKind = 'enroll' | 'reset';
+
 export interface InviteRow {
   invite_hash: string;
   org_id: string;
+  kind: InviteKind;
   expires_at: Date;
   accepted_at: Date | null;
 }
@@ -326,14 +336,15 @@ export async function createInvite(
   db: Queryable,
   orgId: string,
   ttlMs: number,
-): Promise<{ invite: string; expires_at: Date }> {
+  kind: InviteKind = 'enroll',
+): Promise<{ invite: string; kind: InviteKind; expires_at: Date }> {
   const invite = randomBytes(32).toString('base64url');
   const expiresAt = new Date(Date.now() + ttlMs);
   await db.query(
-    `INSERT INTO identity.invites (invite_hash, org_id, expires_at) VALUES ($1, $2, $3)`,
-    [hashToken(invite), orgId, expiresAt],
+    `INSERT INTO identity.invites (invite_hash, org_id, kind, expires_at) VALUES ($1, $2, $3, $4)`,
+    [hashToken(invite), orgId, kind, expiresAt],
   );
-  return { invite, expires_at: expiresAt };
+  return { invite, kind, expires_at: expiresAt };
 }
 
 /** The invite row when it exists, is unexpired, and is not yet accepted. */
@@ -343,11 +354,34 @@ export async function findOpenInvite(
 ): Promise<InviteRow | undefined> {
   if (!/^[A-Za-z0-9_-]{20,128}$/.test(invite)) return undefined;
   const res = await db.query<InviteRow>(
-    `SELECT invite_hash, org_id, expires_at, accepted_at FROM identity.invites
+    `SELECT invite_hash, org_id, kind, expires_at, accepted_at FROM identity.invites
       WHERE invite_hash = $1 AND accepted_at IS NULL AND expires_at > now()`,
     [hashToken(invite)],
   );
   return res.rows[0];
+}
+
+/** True when the organization has an unexpired, unaccepted invite of any kind. */
+export async function hasOpenInvite(db: Queryable, orgId: string): Promise<boolean> {
+  const res = await db.query(
+    `SELECT 1 FROM identity.invites
+      WHERE org_id = $1 AND accepted_at IS NULL AND expires_at > now() LIMIT 1`,
+    [orgId],
+  );
+  return res.rows.length > 0;
+}
+
+/** The terms version the organization most recently agreed to, if any. */
+export async function latestAgreedTermsVersion(
+  db: Queryable,
+  orgId: string,
+): Promise<string | undefined> {
+  const res = await db.query<{ terms_version: string }>(
+    `SELECT terms_version FROM identity.agreements WHERE org_id = $1
+      ORDER BY accepted_at DESC, agreement_id DESC LIMIT 1`,
+    [orgId],
+  );
+  return res.rows[0]?.terms_version;
 }
 
 export interface ConsoleLoginRow {
@@ -406,7 +440,7 @@ export async function completeEnrollment(
   return withTransaction(pool, async (client) => {
     const claimed = await client.query(
       `UPDATE identity.invites SET accepted_at = now()
-        WHERE invite_hash = $1 AND accepted_at IS NULL AND expires_at > now()`,
+        WHERE invite_hash = $1 AND kind = 'enroll' AND accepted_at IS NULL AND expires_at > now()`,
       [input.invite.invite_hash],
     );
     if ((claimed.rowCount ?? 0) === 0) throw new ApiError(404, 'not_found');
@@ -433,6 +467,58 @@ export async function completeEnrollment(
     const org = await findOrganizationById(client, input.invite.org_id);
     if (org === undefined) throw new Error('organization vanished during enrollment');
     return { login_id: loginId, org };
+  });
+}
+
+export interface ResetInput {
+  invite: InviteRow;
+  passwordHash: string;
+  termsVersion: string;
+  clauses: readonly string[];
+}
+
+/**
+ * Accept a reset invite in one transaction: revoke every console login the
+ * organization has (the old password stops working and its sessions end),
+ * create a new login with the new hash, record a new agreement only when the
+ * pilot terms version changed since the last one, mark the invite accepted,
+ * audit. Nodes, tokens, and the display name are not touched.
+ */
+export async function completeReset(
+  pool: Pool,
+  input: ResetInput,
+): Promise<{ login_id: string; org: OrganizationRow; agreement_recorded: boolean }> {
+  return withTransaction(pool, async (client) => {
+    const claimed = await client.query(
+      `UPDATE identity.invites SET accepted_at = now()
+        WHERE invite_hash = $1 AND kind = 'reset' AND accepted_at IS NULL AND expires_at > now()`,
+      [input.invite.invite_hash],
+    );
+    if ((claimed.rowCount ?? 0) === 0) throw new ApiError(404, 'not_found');
+    const orgId = input.invite.org_id;
+    await client.query(
+      `UPDATE identity.console_logins SET revoked_at = now()
+        WHERE org_id = $1 AND revoked_at IS NULL`,
+      [orgId],
+    );
+    const loginId = ulid();
+    await client.query(
+      `INSERT INTO identity.console_logins (login_id, org_id, password_hash) VALUES ($1, $2, $3)`,
+      [loginId, orgId, input.passwordHash],
+    );
+    const agreed = await latestAgreedTermsVersion(client, orgId);
+    const agreementRecorded = agreed !== input.termsVersion;
+    if (agreementRecorded) {
+      await client.query(
+        `INSERT INTO identity.agreements (agreement_id, org_id, login_id, terms_version, clauses)
+         VALUES ($1, $2, $3, $4, $5)`,
+        [ulid(), orgId, loginId, input.termsVersion, [...input.clauses]],
+      );
+    }
+    await audit(client, 'console.password_reset', `login:${loginId}`, `org:${orgId}`);
+    const org = await findOrganizationById(client, orgId);
+    if (org === undefined) throw new Error('organization vanished during reset');
+    return { login_id: loginId, org, agreement_recorded: agreementRecorded };
   });
 }
 

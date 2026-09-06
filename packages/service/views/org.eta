@@ -15,6 +15,7 @@
     <% if (it.notice) { %>
       <p class="notice" id="notice">
         <% if (it.notice === 'enrolled') { %>Enrollment complete. Register your first node below.<% } %>
+        <% if (it.notice === 'password_reset') { %>Console password set. The previous password no longer works; nodes and tokens are unchanged.<% } %>
         <% if (it.notice === 'node_registered') { %>Node registered. Issue it a token below.<% } %>
         <% if (it.notice === 'node_revoked') { %>Node revoked. Every token issued to it now answers 401.<% } %>
         <% if (it.notice === 'token_revoked') { %>Token revoked.<% } %>
@@ -38,7 +39,7 @@
         <code id="issued-token-value"><%= it.issued.token %></code>
         <p>On the node, save it with owner-only permissions and point the runner at it:</p>
         <pre>umask 077 && printf '%s' '&lt;token&gt;' &gt; ~/.iwik/token</pre>
-        <p class="muted">Reloading this page will not show the token again.</p>
+        <p class="muted">Reloading will not show it again; submitting the form again issues another token.</p>
       </section>
     <% } %>
 

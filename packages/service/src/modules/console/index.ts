@@ -42,12 +42,20 @@ export const viewsDir = join(serviceRoot, 'views');
 
 export const ORG_NAME_MAX_LENGTH = 120;
 
+/** Subject for the per-IP login window: the same for every request. */
+const IP_BUCKET = '*';
+
 export interface ConsoleDeps {
   pool: Pool;
   config: Config;
   registry: Registry;
-  /** Shared with tests so the window can be inspected; one per process. */
+  /** Per organization name + client IP failure window; one per process. */
   loginFailures?: FailureWindow;
+  /**
+   * Stage 11: a second window keyed by client IP alone (same limit and
+   * window), so varying the organization name does not buy more attempts.
+   */
+  loginIpFailures?: FailureWindow;
 }
 
 interface SessionView {
@@ -103,6 +111,7 @@ function formString(body: unknown, field: string, max: number): string {
 
 export function registerConsoleRoutes(app: FastifyInstance, deps: ConsoleDeps): void {
   const failures = deps.loginFailures ?? new FailureWindow();
+  const ipFailures = deps.loginIpFailures ?? new FailureWindow();
   const enrollmentOn = deps.config.featureEnrollment;
 
   app.get<{ Querystring: { login?: string } }>('/', async (request, reply) => {
@@ -136,7 +145,10 @@ export function registerConsoleRoutes(app: FastifyInstance, deps: ConsoleDeps): 
     return reply.redirect('/', 303);
   });
 
-  // Stage 6 sign-in: organization name + console password, rate limited.
+  // Stage 6 sign-in: organization name + console password, rate limited per
+  // organization + IP and (stage 11) per IP alone. Both key on `request.ip`,
+  // which is the X-Forwarded-For client only when IWIK_TRUST_PROXY says so.
+  // In-process memory, pilot only: see identity/ratelimit.ts.
   app.get<{ Querystring: { login?: string } }>(
     '/console/login',
     { preHandler: requireEnrollment(deps.config) },
@@ -159,7 +171,10 @@ export function registerConsoleRoutes(app: FastifyInstance, deps: ConsoleDeps): 
       const orgName = formString(request.body, 'organization', ORG_NAME_MAX_LENGTH).trim();
       const password = formString(request.body, 'password', PASSWORD_MAX_LENGTH);
       const ip = request.ip;
-      const retryAfter = failures.retryAfterSeconds(orgName, ip);
+      const retryAfter = Math.max(
+        failures.retryAfterSeconds(orgName, ip),
+        ipFailures.retryAfterSeconds(IP_BUCKET, ip),
+      );
       if (retryAfter > 0) {
         request.log.info('console login rate limited');
         throw new ApiError(429, 'rate_limited', { headers: { 'retry-after': String(retryAfter) } });
@@ -171,10 +186,15 @@ export function registerConsoleRoutes(app: FastifyInstance, deps: ConsoleDeps): 
         verifyPassword(password, login?.password_hash ?? DUMMY_HASH) && login !== undefined;
       if (!ok) {
         failures.recordFailure(orgName, ip);
+        ipFailures.recordFailure(IP_BUCKET, ip);
         request.log.info('console login failed');
         return reply.redirect('/console/login?login=failed', 303);
       }
+      // A success clears the organization's own window only; the per-IP
+      // window keeps counting until it expires, so one known password does
+      // not reopen guessing against other organizations from that address.
       failures.clear(orgName, ip);
+      // setSession also rotates the CSRF nonce (stage 11).
       setSession(reply, deps.config, {
         kind: 'org',
         login_id: login.login_id,
