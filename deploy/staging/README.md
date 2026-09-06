@@ -15,15 +15,27 @@ otherwise. Record secret **locations** (never values) in `STATUS.md`.
 ## 0. What a release is
 
 - `.github/workflows/release.yml` builds `ghcr.io/seanerama/i-wish-i-knew:<tag>`
-  and `:sha-<short>` for `linux/amd64` and `linux/arm64` on every `v*` tag.
+  and `:sha-<short>` for `linux/amd64` and `linux/arm64` on every `v*` tag,
+  then scans the pushed image with Trivy (HIGH/CRITICAL, fixable findings
+  only). A finding fails the workflow: there is no release to deploy until it
+  is fixed and a new tag is cut. A passing run uploads the `release-digests`
+  artifact, `release-digests.txt`, one line of the form
+  `ghcr.io/seanerama/i-wish-i-knew:<tag>@sha256:<digest>` (the manifest-list
+  digest; also the job output `digest`).
 - Cut one from a commit on `main` (from a checkout, not the host):
 
   ```sh
   git tag v0.0.1 <commit-on-main>
   git push origin v0.0.1
-  gh run watch --repo seanerama/i-wish-i-knew   # wait for "Release" to finish
-  docker buildx imagetools inspect ghcr.io/seanerama/i-wish-i-knew:v0.0.1   # both platforms listed
+  gh run watch --repo seanerama/i-wish-i-knew   # wait for "Release" to finish (build, scan, digest)
+  gh run download --repo seanerama/i-wish-i-knew -n release-digests   # release-digests.txt
+  docker buildx imagetools inspect ghcr.io/seanerama/i-wish-i-knew:v0.0.1   # both platforms listed; digest matches the artifact
   ```
+
+- `deploy/staging/deploy.sh` pins by digest: given a bare tag it resolves the
+  digest itself from the registry, and it also accepts the artifact's line
+  verbatim (`deploy.sh v0.0.1@sha256:...`). Either way the unit runs an
+  immutable reference; compare against `release-digests.txt` when in doubt.
 
 - The first push creates the ghcr package **private**. Either make it public
   (package settings on github.com) or give the host a read-only token

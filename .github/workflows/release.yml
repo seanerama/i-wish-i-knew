@@ -9,6 +9,11 @@ name: Release
 #   ghcr.io/seanerama/i-wish-i-knew:sha-<short>    e.g. sha-1a2b3c4
 #
 # The arm64 platform is required: the production host is Graviton (ADR-0004).
+# After the push the image is scanned with Trivy (stage 12): any HIGH or
+# CRITICAL vulnerability with a fix available fails the job. A passing run
+# publishes the manifest-list digest as the job output `digest` and as the
+# `release-digests` artifact (`release-digests.txt`, one `<ref>@sha256:<digest>`
+# line) for the Operator to pin with deploy/staging/deploy.sh.
 # There is deliberately NO deploy step here — deploys are the Release/Deploy
 # Operator's job (`/verity:ship`, confirm-gated), following
 # deploy/staging/README.md and deploy/production/README.md.
@@ -28,6 +33,10 @@ concurrency:
 jobs:
   image:
     runs-on: ubuntu-latest
+    outputs:
+      # Manifest-list digest of ghcr.io/seanerama/i-wish-i-knew:<tag>; also in
+      # the `release-digests` artifact as `<ref>@sha256:<digest>`.
+      digest: ${{ steps.digest.outputs.digest }}
     steps:
       - uses: actions/checkout@v7
       - uses: docker/setup-qemu-action@v4
@@ -52,6 +61,7 @@ jobs:
             type=ref,event=tag
             type=sha,prefix=sha-,format=short
       - name: Build and push (linux/amd64, linux/arm64)
+        id: build
         uses: docker/build-push-action@v7
         with:
           context: .
@@ -74,3 +84,41 @@ jobs:
             grep -q "Platform: *$p" inspect.txt || { echo "missing platform $p in $ref"; exit 1; }
           done
           echo "published: ${{ steps.meta.outputs.tags }}" | tr ',' '\n'
+      # Stage 12 (issue #18): the pushed reference must scan clean at
+      # HIGH/CRITICAL for vulnerabilities that have a fix, or the release job
+      # fails and the Operator has nothing to deploy. Trivy scans the
+      # linux/amd64 entry of the manifest list (the runner's platform); the
+      # arm64 entry carries the same apk and npm package set. Not skippable:
+      # the digest artifact below is only produced when this step passes.
+      - name: Trivy scan of the pushed image (HIGH/CRITICAL, fixable only)
+        uses: aquasecurity/trivy-action@v0.36.0
+        with:
+          scan-type: image
+          image-ref: ghcr.io/seanerama/i-wish-i-knew:${{ github.ref_name }}
+          scanners: vuln
+          severity: HIGH,CRITICAL
+          ignore-unfixed: true
+          exit-code: '1'
+          format: table
+      # The manifest-list digest deploy/staging/deploy.sh pins. Cross-check
+      # the builder's reported digest against what the registry serves, then
+      # publish it as a job output and as the `release-digests` artifact.
+      - name: Manifest digest
+        id: digest
+        run: |
+          set -eu
+          ref="ghcr.io/seanerama/i-wish-i-knew:${GITHUB_REF_NAME}"
+          built="${{ steps.build.outputs.digest }}"
+          served=$(docker buildx imagetools inspect --format '{{.Manifest.Digest}}' "$ref")
+          [ "$built" = "$served" ] || { echo "digest mismatch: builder=$built registry=$served"; exit 1; }
+          case "$served" in sha256:[0-9a-f]*) ;; *) echo "unexpected digest: $served"; exit 1;; esac
+          echo "digest=$served" >> "$GITHUB_OUTPUT"
+          echo "${ref}@${served}" > release-digests.txt
+          echo "release-digests.txt:"; cat release-digests.txt
+      - name: Upload release-digests.txt
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-digests
+          path: release-digests.txt
+          if-no-files-found: error
+          retention-days: 90
