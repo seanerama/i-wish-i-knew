@@ -96,6 +96,7 @@ the endpoint table above and do not change any listed semantics.
 | Method and path | Scope | Purpose |
 |---|---|---|
 | `POST /v1/admin/organizations` | operator (`IWIK_OPERATOR_TOKEN`, not a node token) | create an organization and its one-time enrollment invite; returns the invite URL once; `409` if the display name exists |
+| `POST /v1/admin/organizations/{org_id}/invites` | operator | (recorded from stage 11) re-invite an existing organization: returns a one-time invite URL with `kind: "reset"` (console password reset, nodes and tokens kept) or `kind: "enroll"` if the organization never completed enrollment; `404` unknown org; `409 invite_exists` while any unexpired invite is open |
 
 Operator scope is distinct from node scopes and never grants evidence access.
 Console routes (`/enroll/<invite>`, `/org`, `/console/login`) are server-rendered
