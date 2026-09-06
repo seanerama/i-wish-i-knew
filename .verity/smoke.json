@@ -1,0 +1,29 @@
+{
+  "baseUrl": "http://100.110.222.42:3000",
+  "flows": [
+    {
+      "name": "console renders identity, trust statement, and revision",
+      "steps": [
+        { "goto": "/" },
+        { "expectText": "I Wish I Knew" },
+        { "expectText": "service operators are inside the trust boundary during the pilot" },
+        { "expectText": "Evidence revision" },
+        { "expectText": "inference-api/latency@1" }
+      ]
+    },
+    {
+      "name": "readiness reports database reachable and migrations current",
+      "steps": [
+        { "goto": "/readyz" },
+        { "expectText": "{\"ok\":true}" }
+      ]
+    },
+    {
+      "name": "liveness works independently of the intake flag",
+      "steps": [
+        { "goto": "/healthz" },
+        { "expectText": "{\"ok\":true}" }
+      ]
+    }
+  ]
+}
