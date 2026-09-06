@@ -64,6 +64,17 @@ vault, and no credentials beyond what `input.json` carries for the target.
 artifacts to `~/.iwik/vault/<run_id>/`; only the sanitized `Run` is ever
 submitted, and only after `iwik preview` succeeds.
 
+## Cost model and claim derivation (additive, recorded 2026-09-06 from stage 5)
+
+`protocols/<name>/claims.json` may carry two optional members:
+
+- `cost_model`: how the runner estimates a plan's cost. For `target.kind = fixture`
+  the estimate is 0. For real targets the estimate is per-request price × planned
+  requests, using operator-entered prices; a real target with no estimate is
+  refused (fail closed) and any estimate above `budget_per_plan_usd` is refused.
+- `derivation.metrics`: JSON Pointers into `result.json` naming the metrics each
+  permitted claim is derived from; `iwik report` follows these when summarizing.
+
 ## Versioning
 
 Frozen at **v1**. Changes are **additive only** — a breaking change is a NEW

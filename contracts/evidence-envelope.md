@@ -113,6 +113,14 @@ A required context key that is absent is emitted as
 A receipt never contains a `run_id`, `node_id`, or `org_ref` that belongs to
 another organization.
 
+## Count-range vocabulary (additive, recorded 2026-09-06 from stage 5)
+
+`AnswerReceipt.cohort.orgs` and `.runs` are strings from a fixed vocabulary:
+`"<3"`, `"3-5"`, `"6-10"`, `"11+"` for organizations and `"<5"`, `"5-10"`,
+`"11-50"`, `"51+"` for runs. A receipt with `status = insufficient_evidence`
+carries `"<3"` / `"<5"` and `suppression_reasons` including
+`no_cooperative_evidence`; it never carries a result body.
+
 ## Versioning
 
 Frozen at **v1**. Changes are **additive only** — a breaking change is a NEW
