@@ -126,6 +126,7 @@ export function registerConsoleRoutes(app: FastifyInstance, deps: ConsoleDeps): 
       intake_enabled: deps.config.featureIntake,
       enrollment_enabled: enrollmentOn,
       withdrawal_enabled: deps.config.featureWithdrawal,
+      dedupe_enabled: deps.config.featureDedupe,
       session: view,
       login_failed: request.query.login === 'failed',
       csrf: csrfToken(request, reply, deps.config),

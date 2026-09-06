@@ -27,6 +27,7 @@ import {
   CookieJar,
   DATABASE_URL,
   enrollWithNode,
+  handlerDeps,
   postForm,
   prepareRun,
   repoRoot,
@@ -287,7 +288,7 @@ test('withdraw two of three: one revision, withdrawn_revision on the rows, query
     [PROTOCOL],
   );
   const runner = new JobRunner(pool, {
-    handlers: buildHandlers({ envelope: t.app.iwik.envelope }),
+    handlers: buildHandlers(handlerDeps(t)),
   });
   assert.equal(await runner.drain(), 1);
   const cache = await pool.query<{ key: string }>(`SELECT key FROM evidence.cache ORDER BY key`);

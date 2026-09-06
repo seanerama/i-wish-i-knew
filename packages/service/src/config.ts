@@ -62,6 +62,13 @@ export interface Config {
    * `withdraw_contribution` tool. Default OFF everywhere (kill switch).
    */
   featureWithdrawal: boolean;
+  /**
+   * Stage 8: intake dedupe (duplicate receipts, shared-source flags) and the
+   * operator cohort endpoint. Default OFF everywhere. The plaintext index
+   * projection and the contributions ledger are written regardless, so
+   * turning the flag on later needs no backfill.
+   */
+  featureDedupe: boolean;
   /** Worker poll interval in milliseconds (`IWIK_WORKER_INTERVAL_MS`, default 5 s). */
   workerIntervalMs: number;
 }
@@ -228,6 +235,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
       'IWIK_INVITE_TTL_MS',
     ),
     featureWithdrawal: flag(env['IWIK_FEATURE_WITHDRAWAL'], false),
+    featureDedupe: flag(env['IWIK_FEATURE_DEDUPE'], false),
     workerIntervalMs: positiveInt(env['IWIK_WORKER_INTERVAL_MS'], 5000, 'IWIK_WORKER_INTERVAL_MS'),
   };
 }

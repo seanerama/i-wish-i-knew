@@ -48,7 +48,8 @@ npm run dev                                      # http://localhost:3000  (conso
 Service configuration is environment-only: `DATABASE_URL`, `IWIK_KEK`, `PORT`,
 `IWIK_FEATURE_INTAKE` (kill-switch for preview/submit; default `off` when
 `NODE_ENV=production`, `on` otherwise), `IWIK_FEATURE_WITHDRAWAL` (stage 7,
-default `off` everywhere; see "Withdrawal" below), and the optional seed identity
+default `off` everywhere; see "Withdrawal" below), `IWIK_FEATURE_DEDUPE` (stage 8,
+default `off` everywhere; see "Dedupe" below), and the optional seed identity
 `IWIK_SEED_ORG`, `IWIK_SEED_NODE_TOKEN`, `IWIK_SEED_NODE_PUBKEY` (base64 raw
 Ed25519 public key), `IWIK_SEED_NODE_ID`. Extra secret patterns for intake:
 `IWIK_SECRET_PATTERNS` (JSON array of regex sources). `IWIK_TRUST_PROXY`
@@ -113,6 +114,46 @@ and the console form answer `404 feature_disabled`, and the MCP tool
   `evidence.runs.sharing_policy` from the decrypted body for rows that predate
   the stage 7 migration; the column is trustworthy only where
   `backfill_version` is set, and intake sets both on insert).
+
+## Dedupe and concentration accounting (stage 8)
+
+Contributor counts are made honest before anything is aggregated (brief §7,
+ADR-0002 thresholds, ADR-0003 "one contributor = one organization"):
+
+- **Plaintext index projection.** Next to the ciphertext, intake writes
+  `evidence.runs.measurement_digest`, `node_id`, `index_context`, `is_fixture`
+  and `index_version`. `index_context` holds only the protocol's
+  `required_context` keys as `{ value, origin }`; a key outside that list is
+  never projected, and the projected values go through the same secret rescan
+  and length limit as the body. `measurement_digest` is
+  `sha256:` + SHA-256 over the JCS form of
+  `{ protocol_digest, target_label_digest: target.label_digest, result, attempts_summary: accounting }`,
+  so a re-upload of the same measurement (new `run_id`, another node, other
+  timestamps or context) collides. Rows that predate the stage 8 migration are
+  projected by the worker job `index_backfill` (self-scheduled while any row
+  has `index_version IS NULL`); a row is never used to form or count a cohort
+  before that. Stage 9 forms cohorts from this projection without decrypting.
+- **Contributions ledger.** `evidence.contributions(protocol_ref, org_ref,
+  runs_accepted, runs_withdrawn, last_received)` is maintained inside the
+  intake and withdrawal transactions and rebuilt by `index_backfill`. Fixture
+  runs (`target.kind = fixture`, never releasable) and same-organization
+  duplicates never touch it.
+- **Behind `IWIK_FEATURE_DEDUPE`** (default **off**): the same
+  `measurement_digest` from the same organization is accepted as an intake
+  receipt with `status: "duplicate"` and `duplicate_of: <your earlier run_id>`;
+  it is stored, not counted, and is not an evidence revision. The same digest
+  from another organization is stored and counted for both, and both rows are
+  flagged `shared_source_suspect` for stage 9 to weigh (a shared source is one
+  contributor, not two). With the flag off intake behaves exactly as before,
+  but the projection and the ledger are still written, so turning the flag on
+  later needs no backfill.
+- **Operator view.** `GET /v1/admin/cohorts?protocol_ref=<ref>&filter.<key>=<value>`
+  (operator token; `404 feature_disabled` while the flag is off) answers with
+  ranges only: `orgs` (`<3`, `3-5`, `6-10`, `11+`), `runs` (`<5`, `5-10`,
+  `11-50`, `51+`) and `max_org_share` (`<=50%` or `>50%`, the ADR-0002 cap).
+  Filter keys must be `required_context` keys; values parse as JSON scalars
+  (`1`, `true`) or strings. Exact counts exist only in the internal
+  `cohortPreview` used by stage 9. Smoke check: `smoke/cohorts.md`.
 
 ## Enrollment (pilot)
 

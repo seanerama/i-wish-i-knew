@@ -32,14 +32,40 @@ const RECEIPT = {
   properties: {
     receipt_id: { type: 'string' },
     kind: { type: 'string', enum: ['intake'] },
-    status: { type: 'string', enum: ['accepted'] },
+    status: {
+      type: 'string',
+      enum: ['accepted', 'duplicate'],
+      description:
+        'duplicate (stage 8, behind IWIK_FEATURE_DEDUPE): the same measurement was already accepted from this organization; the run is stored but not counted',
+    },
     run_id: { type: 'string' },
     content_digest: { type: 'string' },
     protocol_ref: { type: 'string' },
     execution_status: { type: 'string' },
     sharing_policy: { type: 'string', enum: ['private', 'cooperative'] },
+    duplicate_of: {
+      type: 'string',
+      description: 'With status duplicate: the earlier run id, always one of your own',
+    },
     evidence_revision: { type: 'integer' },
     issued_at: { type: 'string', format: 'date-time' },
+  },
+};
+
+/** Operator cohort preview (stage 8): ranges only, never exact counts. */
+const COHORT_RANGES = {
+  type: 'object',
+  required: ['protocol_ref', 'filters', 'orgs', 'runs', 'max_org_share', 'evidence_revision'],
+  properties: {
+    protocol_ref: { type: 'string' },
+    filters: {
+      type: 'object',
+      additionalProperties: { type: ['string', 'number', 'boolean', 'null'] },
+    },
+    orgs: { type: 'string', enum: ['<3', '3-5', '6-10', '11+'] },
+    runs: { type: 'string', enum: ['<5', '5-10', '11-50', '51+'] },
+    max_org_share: { type: 'string', enum: ['<=50%', '>50%'] },
+    evidence_revision: { type: 'integer', minimum: 0 },
   },
 };
 
@@ -156,6 +182,7 @@ export function buildOpenApi(): Record<string, unknown> {
         WhoAmI: WHOAMI,
         WithdrawalRequest: WITHDRAWAL_REQUEST,
         Withdrawal: WITHDRAWAL,
+        CohortRanges: COHORT_RANGES,
       },
     },
     paths: {
@@ -265,7 +292,8 @@ export function buildOpenApi(): Record<string, unknown> {
           },
           responses: {
             '201': {
-              description: 'accepted',
+              description:
+                'accepted (status accepted; or status duplicate with duplicate_of when IWIK_FEATURE_DEDUPE is on and the same measurement was already accepted from your organization)',
               content: {
                 'application/json': { schema: { $ref: '#/components/schemas/IntakeReceipt' } },
               },
@@ -396,6 +424,50 @@ export function buildOpenApi(): Record<string, unknown> {
               [401, 'unauthorized'],
               [404, 'not_found (unknown organization, or feature disabled)'],
               [409, 'invite_exists (an unexpired, unaccepted invite already exists)'],
+            ),
+          },
+        },
+      },
+      '/v1/admin/cohorts': {
+        get: {
+          summary:
+            'Operator cohort preview (stage 8, additive): how many organizations and runs a (protocol, filters) cohort has, as ranges only',
+          description:
+            'Requires IWIK_FEATURE_DEDUPE=on (404 feature_disabled otherwise, before authentication) and the operator ' +
+            'token. Filters are query parameters named `filter.<key>` where <key> is one of the protocol’s ' +
+            'required_context keys (any other key is 422 not_indexed); values parse as JSON scalars (`1`, `true`, ' +
+            '`null`), otherwise as strings, and match the run’s indexed value exactly. Counts exclude withdrawn runs, ' +
+            'fixture runs, and same-organization duplicates; organizations that submitted the same measurement ' +
+            '(shared_source_suspect) count as one. Exact counts are never returned: orgs and runs use the ' +
+            'AnswerReceipt count-range vocabulary and the largest organization’s share is reported only as ' +
+            'which side of the ADR-0002 50 % cap it falls on.',
+          security: [{ operatorToken: [] }],
+          'x-scope': 'operator',
+          parameters: [
+            { name: 'protocol_ref', in: 'query', required: true, schema: { type: 'string' } },
+            {
+              name: 'filter.<key>',
+              in: 'query',
+              required: false,
+              schema: { type: 'string' },
+              description:
+                'One per required_context key to filter on; repeatable with different keys',
+            },
+          ],
+          responses: {
+            '200': {
+              description: 'ranges',
+              content: {
+                'application/json': { schema: { $ref: '#/components/schemas/CohortRanges' } },
+              },
+            },
+            ...errorResponses(
+              [401, 'unauthorized'],
+              [404, 'feature_disabled'],
+              [
+                422,
+                'validation_failed (protocol_ref shape, protocol_unknown, or a filter key that is not indexed)',
+              ],
             ),
           },
         },
