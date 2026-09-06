@@ -1,0 +1,9 @@
+{
+  "prediction_id": "01ARZ3NDEKTSV4RRFFQ69G5PD3",
+  "based_on_receipt_id": "01ARZ3NDEKTSV4RRFFQ69G5RC1",
+  "protocol_ref": "inference-api/latency@1",
+  "target": { "claim": "error_rate", "metric": "error_rate", "comparator": "below", "value": 0.05 },
+  "horizon": "2026-12-31",
+  "evaluation_rule": "cooperative_requery",
+  "registered_at": "2026-09-06T10:00:00Z"
+}

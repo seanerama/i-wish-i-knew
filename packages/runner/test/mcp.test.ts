@@ -1,9 +1,10 @@
-// `iwik mcp` through the MCP SDK client: the contract test (ten tools whose
-// schemas are the committed contracts/schema/v1/tools/ files verbatim), the
-// kill-switch, and the full flow plan_test -> run_test denied -> policy ->
-// run_test -> preview_contribution -> submit_run -> get_receipt, plus
-// query_evidence answering insufficient_evidence, withdraw_contribution
-// (stage 7) and the two not_yet_available tools.
+// `iwik mcp` through the MCP SDK client: the contract test (the ten frozen
+// tools plus the additive register_prediction, whose schemas are the
+// committed contracts/schema/v1/tools/ files verbatim), the kill-switch, and
+// the full flow plan_test -> run_test denied -> policy -> run_test ->
+// preview_contribution -> submit_run -> get_receipt, plus query_evidence
+// answering insufficient_evidence, withdraw_contribution (stage 7), and the
+// stage 10 ledger tools challenge_finding, register_prediction, report_outcome.
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
 import { readFileSync } from 'node:fs';
@@ -36,6 +37,7 @@ const CONTRACT_TOOLS = [
   'challenge_finding',
   'report_outcome',
   'withdraw_contribution',
+  'register_prediction',
 ];
 
 let service: FakeService;
@@ -102,7 +104,7 @@ test('kill-switch: iwik mcp refuses to start without IWIK_MCP_ENABLED and says w
   assert.equal(off.status, 3);
 });
 
-test('contract: the ten tools, in order, with the committed input and output schemas verbatim, and SKILL.md as instructions', async () => {
+test('contract: the ten tools in order plus register_prediction, with the committed input and output schemas verbatim, and SKILL.md as instructions', async () => {
   const { tools } = await client.listTools();
   assert.deepEqual(
     tools.map((t) => t.name),
@@ -356,23 +358,241 @@ test('withdraw_contribution: real call, reason vocabulary, idempotent set, featu
   assert.equal(service.queries.length, queriesBefore, 'no query was made');
 });
 
-test('challenge_finding, report_outcome: present, frozen, not yet available', async () => {
-  const receiptId = '01ARZ3NDEKTSV4RRFFQ69G5FAV';
-  const challenge = await call('challenge_finding', {
+test('challenge_finding: frozen input, structured grounds enforced locally, note bounded, real call, feature_disabled and rate_limited with next steps', async () => {
+  const receiptId = [...service.receipts.keys()][0];
+  assert.ok(receiptId, 'earlier tests issued receipts');
+  const filedBefore = service.challenges.size;
+
+  // grounds.kind outside the vocabulary never reaches the service
+  const loose = await call('challenge_finding', {
     receipt_id: receiptId,
     grounds: { kind: 'methodology', rationale: 'cache was warm' },
   });
-  assert.equal(challenge.ok, false);
-  assert.equal(challenge.error?.code, 'not_yet_available');
-  assert.match(challenge.error?.next_step ?? '', /[Mm]ilestone 0\.3/);
-  assert.match(challenge.error?.message ?? '', /nothing was sent/);
-  const outcome = await call('report_outcome', {
+  assert.equal(loose.ok, false);
+  assert.equal(loose.error?.code, 'validation_failed');
+  assert.match(loose.error?.message ?? '', /\/grounds\/kind enum/);
+  assert.match(
+    loose.error?.next_step ?? '',
+    /method, context_mismatch, data_error, replication_failed, affiliation/,
+  );
+  assert.equal(service.challenges.size, filedBefore);
+
+  // a note beyond the bound never reaches the service either
+  const long = await call('challenge_finding', {
+    receipt_id: receiptId,
+    grounds: { kind: 'data_error', rationale: 'x'.repeat(501) },
+  });
+  assert.equal(long.error?.code, 'validation_failed');
+  assert.match(long.error?.message ?? '', /\/statement\/note maxLength/);
+  assert.equal(service.challenges.size, filedBefore);
+
+  // the real call: the rationale travels as the one bounded note, the
+  // structured statement alongside, the target as { kind, id }
+  const filed = await call('challenge_finding', {
+    receipt_id: receiptId,
+    grounds: { kind: 'replication_failed', rationale: 'our own run disagreed' },
+    statement: {
+      claim: 'latency_distribution',
+      metric: 'ttft_ms',
+      statistic: 'p95',
+      direction: 'higher',
+    },
+  });
+  assert.equal(filed.ok, true, JSON.stringify(filed));
+  assert.match(String(filed.data?.['challenge_id']), /^[0-9A-HJKMNP-TV-Z]{26}$/);
+  assert.equal(filed.data?.['status'], 'open');
+  assert.equal(filed.data?.['grounds'], 'replication_failed');
+  assert.deepEqual(service.lastBody, {
+    target: { kind: 'receipt', id: receiptId },
+    grounds: 'replication_failed',
+    statement: {
+      claim: 'latency_distribution',
+      metric: 'ttft_ms',
+      statistic: 'p95',
+      direction: 'higher',
+      note: 'our own run disagreed',
+    },
+  });
+  assert.equal(service.challenges.size, filedBefore + 1);
+
+  // a claim target
+  const claimed = await call('challenge_finding', {
+    receipt_id: receiptId,
+    claim_id: '01ARZ3NDEKTSV4RRFFQ69G5CM1',
+    grounds: { kind: 'method', rationale: 'p50 pooled?' },
+  });
+  assert.equal(claimed.ok, true, JSON.stringify(claimed));
+  assert.deepEqual((service.lastBody as { target: unknown }).target, {
+    kind: 'claim',
+    id: '01ARZ3NDEKTSV4RRFFQ69G5CM1',
+  });
+
+  // a target that is not ours: not_found with a next step, nothing named
+  const foreign = await call('challenge_finding', {
+    receipt_id: '01ARZ3NDEKTSV4RRFFQ69G5FXR',
+    grounds: { kind: 'method', rationale: 'no' },
+  });
+  assert.equal(foreign.error?.code, 'not_found');
+  assert.match(foreign.error?.next_step ?? '', /not one of your organization/);
+  assert.ok(!JSON.stringify(foreign).includes('G5FXR'));
+
+  // the sixth in a day: rate_limited with the Retry-After advice
+  while (service.challenges.size < 5) {
+    const more = await call('challenge_finding', {
+      receipt_id: receiptId,
+      grounds: { kind: 'data_error', rationale: 'again' },
+    });
+    assert.equal(more.ok, true);
+  }
+  const sixth = await call('challenge_finding', {
+    receipt_id: receiptId,
+    grounds: { kind: 'data_error', rationale: 'once more' },
+  });
+  assert.equal(sixth.ok, false);
+  assert.equal(sixth.error?.code, 'rate_limited');
+  assert.match(sixth.error?.next_step ?? '', /5 challenges per organization/);
+  assert.equal(service.challenges.size, 5);
+
+  // the deployment has the ledger switched off
+  service.challengeEnabled = false;
+  try {
+    const off = await call('challenge_finding', {
+      receipt_id: receiptId,
+      grounds: { kind: 'method', rationale: 'no' },
+    });
+    assert.equal(off.ok, false);
+    assert.equal(off.error?.code, 'feature_disabled');
+    assert.match(off.error?.next_step ?? '', /IWIK_FEATURE_CHALLENGE/);
+    assert.match(off.error?.next_step ?? '', /nothing was sent/);
+  } finally {
+    service.challengeEnabled = true;
+  }
+});
+
+test('register_prediction then report_outcome: the prediction goes first, the observation is judged once, the stored prediction is never altered', async () => {
+  const receiptId = [...service.receipts.keys()][0];
+  assert.ok(receiptId);
+
+  // an outcome without a prediction never reaches the service
+  const early = await call('report_outcome', {
     receipt_id: receiptId,
     observation: { p50_ms: 25 },
     observed_at: '2026-09-06T00:00:00Z',
   });
-  assert.equal(outcome.error?.code, 'not_yet_available');
-  assert.match(outcome.error?.next_step ?? '', /[Mm]ilestone 0\.3/);
-  // neither reached the service
-  assert.equal(service.queries.length, 1);
+  assert.equal(early.ok, false);
+  assert.equal(early.error?.code, 'validation_failed');
+  assert.match(early.error?.next_step ?? '', /register_prediction .* BEFORE acting/);
+  assert.equal(service.predictions.size, 0);
+
+  const registered = await call('register_prediction', {
+    receipt_id: receiptId,
+    target: {
+      claim: 'latency_distribution',
+      metric: 'ttft_ms',
+      statistic: 'p95',
+      comparator: 'below',
+      value: 300,
+      unit: 'ms',
+    },
+    horizon: '2099-01-01',
+    probability: 0.7,
+    evaluation_rule: 'own_measurement',
+  });
+  assert.equal(registered.ok, true, JSON.stringify(registered));
+  const predictionId = String(registered.data?.['prediction_id']);
+  assert.match(predictionId, /^[0-9A-HJKMNP-TV-Z]{26}$/);
+  assert.equal(registered.data?.['horizon'], '2099-01-01');
+  assert.equal(registered.data?.['evaluation_rule'], 'own_measurement');
+  assert.deepEqual(service.lastBody, {
+    prediction: {
+      based_on_receipt_id: receiptId,
+      target: {
+        claim: 'latency_distribution',
+        metric: 'ttft_ms',
+        statistic: 'p95',
+        comparator: 'below',
+        value: 300,
+        unit: 'ms',
+      },
+      horizon: '2099-01-01',
+      probability: 0.7,
+      evaluation_rule: 'own_measurement',
+    },
+  });
+
+  // a claim the protocol does not permit: the service's paths come back
+  const unknownClaim = await call('register_prediction', {
+    receipt_id: receiptId,
+    target: { claim: 'throughput' },
+    horizon: '2099-01-01',
+    evaluation_rule: 'cooperative_requery',
+  });
+  assert.equal(unknownClaim.error?.code, 'validation_failed');
+  assert.match(unknownClaim.error?.message ?? '', /\/prediction\/target\/claim claim_unknown/);
+  assert.match(unknownClaim.error?.next_step ?? '', /permitted claims/);
+
+  // the outcome: result and environment_changed may sit inside `observation`
+  const reported = await call('report_outcome', {
+    receipt_id: receiptId,
+    observation: { prediction_id: predictionId, result: 'not_met', environment_changed: true },
+    observed_at: '2026-09-28T08:00:00Z',
+  });
+  assert.equal(reported.ok, true, JSON.stringify(reported));
+  assert.match(String(reported.data?.['outcome_id']), /^[0-9A-HJKMNP-TV-Z]{26}$/);
+  assert.equal(reported.data?.['prediction_id'], predictionId);
+  assert.equal(reported.data?.['result'], 'not_met');
+  assert.equal(reported.data?.['environment_changed'], true);
+  assert.deepEqual(service.lastBody, {
+    prediction_id: predictionId,
+    observed: {
+      observed_at: '2026-09-28T08:00:00.000Z',
+      result: 'not_met',
+      environment_changed: true,
+    },
+    based_on_receipt_id: receiptId,
+  });
+
+  // judged exactly once
+  const again = await call('report_outcome', {
+    receipt_id: receiptId,
+    prediction_id: predictionId,
+    observation: {},
+    result: 'met',
+    observed_at: '2026-09-29T08:00:00Z',
+  });
+  assert.equal(again.error?.code, 'outcome_exists');
+  assert.match(again.error?.next_step ?? '', /exactly once/);
+
+  // a different receipt than the one registered: target_mismatch
+  const second = await call('register_prediction', {
+    receipt_id: receiptId,
+    target: { claim: 'error_rate', comparator: 'below', value: 0.05 },
+    horizon: '2099-06-01',
+    evaluation_rule: 'operational_observation',
+  });
+  assert.equal(second.ok, true);
+  const mismatch = await call('report_outcome', {
+    receipt_id: '01ARZ3NDEKTSV4RRFFQ69G5FXR',
+    prediction_id: String(second.data?.['prediction_id']),
+    observation: {},
+    result: 'met',
+    observed_at: '2026-09-29T08:00:00Z',
+  });
+  assert.equal(mismatch.error?.code, 'target_mismatch');
+  assert.match(mismatch.error?.next_step ?? '', /cannot be changed/);
+
+  // flag off
+  service.challengeEnabled = false;
+  try {
+    const off = await call('register_prediction', {
+      receipt_id: receiptId,
+      target: { claim: 'error_rate' },
+      horizon: '2099-06-01',
+      evaluation_rule: 'own_measurement',
+    });
+    assert.equal(off.error?.code, 'feature_disabled');
+    assert.match(off.error?.next_step ?? '', /IWIK_FEATURE_CHALLENGE/);
+  } finally {
+    service.challengeEnabled = true;
+  }
 });

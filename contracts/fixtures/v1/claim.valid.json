@@ -1,0 +1,22 @@
+{
+  "claim_id": "01ARZ3NDEKTSV4RRFFQ69G5CM1",
+  "receipt_id": "01ARZ3NDEKTSV4RRFFQ69G5RC1",
+  "protocol_ref": "inference-api/latency@1",
+  "claim": "latency_distribution",
+  "statement": "Across 5-10 runs from 3-5 organizations, per-run nearest-rank percentiles of ttft_ms and total_ms are reported as spreads across runs; no pooled number is released.",
+  "status": "supported",
+  "origin": "measured",
+  "corroboration": "unreplicated",
+  "derivation": {
+    "method": "cooperative_release",
+    "calculation_version": "latency-v1",
+    "policy_version": "2026-09-p1",
+    "evidence_revision": 42,
+    "orgs": "3-5",
+    "runs": "5-10"
+  },
+  "supporting_runs": "5-10",
+  "uncertainty": "descriptive",
+  "limitations": ["Fewer than 20 runs: tail statistics (p95, p99) do not support a tail claim."],
+  "created_at": "2026-09-06T10:00:00Z"
+}

@@ -129,6 +129,7 @@ export function registerConsoleRoutes(app: FastifyInstance, deps: ConsoleDeps): 
       withdrawal_enabled: deps.config.featureWithdrawal,
       dedupe_enabled: deps.config.featureDedupe,
       cooperative_query_enabled: deps.config.featureCooperativeQuery,
+      challenge_enabled: deps.config.featureChallenge,
       session: view,
       login_failed: request.query.login === 'failed',
       csrf: csrfToken(request, reply, deps.config),

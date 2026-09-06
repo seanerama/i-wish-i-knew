@@ -120,6 +120,108 @@ const WITHDRAWAL = {
   },
 };
 
+const ULID = { type: 'string', pattern: '^[0-9A-HJKMNP-TV-Z]{26}$' };
+
+/** Stage 10: file a challenge (the Challenge entity's target, grounds, statement). */
+const CHALLENGE_REQUEST = {
+  type: 'object',
+  required: ['target', 'grounds'],
+  additionalProperties: false,
+  properties: {
+    target: {
+      type: 'object',
+      required: ['kind', 'id'],
+      additionalProperties: false,
+      properties: { kind: { type: 'string', enum: ['receipt', 'claim'] }, id: ULID },
+    },
+    grounds: {
+      type: 'string',
+      enum: ['method', 'context_mismatch', 'data_error', 'replication_failed', 'affiliation'],
+    },
+    statement: { $ref: '#/components/schemas/Challenge/properties/statement' },
+  },
+};
+
+const RESOLVE_REQUEST = {
+  type: 'object',
+  required: ['resolution', 'relationship'],
+  additionalProperties: false,
+  properties: {
+    resolution: { type: 'string', enum: ['upheld', 'rejected', 'superseded'] },
+    relationship: {
+      type: 'object',
+      required: ['kind', 'rationale'],
+      additionalProperties: false,
+      properties: {
+        kind: {
+          type: 'string',
+          enum: ['contradicts', 'narrows', 'supersedes'],
+          description:
+            'Must match the resolution: upheld contradicts, rejected narrows, superseded supersedes',
+        },
+        rationale: { $ref: '#/components/schemas/Relationship/properties/rationale' },
+      },
+    },
+  },
+};
+
+const RESOLVED = {
+  type: 'object',
+  required: ['challenge_id', 'status', 'resolution', 'relationships', 'resolved_revision'],
+  properties: {
+    challenge_id: ULID,
+    status: { type: 'string', enum: ['resolved'] },
+    resolution: { type: 'string', enum: ['upheld', 'rejected', 'superseded'] },
+    relationship_id: ULID,
+    relationships: { type: 'integer', minimum: 0 },
+    resolved_revision: { type: 'integer', minimum: 0 },
+  },
+};
+
+/** Stage 10: the two steps of POST /v1/outcomes. */
+const OUTCOME_REQUEST = {
+  oneOf: [
+    {
+      type: 'object',
+      required: ['prediction'],
+      additionalProperties: false,
+      properties: {
+        prediction: {
+          type: 'object',
+          required: ['based_on_receipt_id', 'target', 'horizon', 'evaluation_rule'],
+          additionalProperties: false,
+          properties: {
+            based_on_receipt_id: ULID,
+            target: { $ref: '#/components/schemas/Prediction/properties/target' },
+            horizon: { type: 'string', pattern: '^[0-9]{4}-[0-9]{2}-[0-9]{2}$' },
+            probability: { type: 'number', minimum: 0, maximum: 1 },
+            evaluation_rule: { $ref: '#/components/schemas/Prediction/properties/evaluation_rule' },
+          },
+        },
+      },
+    },
+    {
+      type: 'object',
+      required: ['prediction_id', 'observed'],
+      additionalProperties: false,
+      properties: {
+        prediction_id: ULID,
+        observed: { $ref: '#/components/schemas/Outcome/properties/observed' },
+        target: {
+          allOf: [{ $ref: '#/components/schemas/Prediction/properties/target' }],
+          description:
+            'Optional restatement; 409 target_mismatch when it differs from the registered target',
+        },
+        based_on_receipt_id: {
+          allOf: [ULID],
+          description:
+            'Optional restatement; 409 target_mismatch when it differs from the registered receipt',
+        },
+      },
+    },
+  ],
+};
+
 const WHOAMI = {
   type: 'object',
   required: ['node_id', 'org_display_name', 'scopes'],
@@ -183,6 +285,15 @@ export function buildOpenApi(): Record<string, unknown> {
         WithdrawalRequest: WITHDRAWAL_REQUEST,
         Withdrawal: WITHDRAWAL,
         CohortRanges: COHORT_RANGES,
+        Challenge: stripDialect(schemaDocument('Challenge')),
+        Claim: stripDialect(schemaDocument('Claim')),
+        Relationship: stripDialect(schemaDocument('Relationship')),
+        Prediction: stripDialect(schemaDocument('Prediction')),
+        Outcome: stripDialect(schemaDocument('Outcome')),
+        ChallengeRequest: CHALLENGE_REQUEST,
+        ResolveRequest: RESOLVE_REQUEST,
+        Resolved: RESOLVED,
+        OutcomeRequest: OUTCOME_REQUEST,
       },
     },
     paths: {
@@ -468,6 +579,151 @@ export function buildOpenApi(): Record<string, unknown> {
                 422,
                 'validation_failed (protocol_ref shape, protocol_unknown, or a filter key that is not indexed)',
               ],
+            ),
+          },
+        },
+      },
+      '/v1/challenges': {
+        post: {
+          summary:
+            'File a structured challenge (stage 10) against a released query receipt of your organization, or one claim released on it',
+          description:
+            'Requires IWIK_FEATURE_CHALLENGE=on (404 feature_disabled otherwise, before authentication). ' +
+            'grounds is one of method, context_mismatch, data_error, replication_failed, affiliation; statement ' +
+            'carries fixed-vocabulary fields (claim, metric, statistic, context_key, direction, and ' +
+            'replication_run_id, which must be one of your own runs) plus one bounded note (at most 500 ' +
+            'characters, rescanned for secret patterns, shown to the operator only). A receipt that is not yours, ' +
+            'a claim not released on one of your receipts, or a foreign replication run is 404 not_found; a ' +
+            'receipt without a released answer is 422 not_released. At most 5 challenges per organization per ' +
+            'rolling 24 hours: the sixth is 429 with Retry-After and the earlier five are unaffected. Released ' +
+            'findings carry their claim_id (additive on AnswerReceipt.result.findings). A challenge is visible to ' +
+            'the filing organization and the operator only and never names another organization’s runs.',
+          security: bearer,
+          'x-scope': 'publish',
+          requestBody: {
+            required: true,
+            content: {
+              'application/json': { schema: { $ref: '#/components/schemas/ChallengeRequest' } },
+            },
+          },
+          responses: {
+            '201': {
+              description: 'the challenge, status open',
+              content: {
+                'application/json': { schema: { $ref: '#/components/schemas/Challenge' } },
+              },
+            },
+            ...errorResponses(
+              [401, 'unauthorized or node_revoked'],
+              [403, 'scope_required'],
+              [404, 'not_found (target not yours) or feature_disabled'],
+              [422, 'validation_failed (shape, enum, note too long, secret_pattern, not_released)'],
+              [429, 'rate_limited (Retry-After in seconds)'],
+            ),
+          },
+        },
+      },
+      '/v1/challenges/{id}': {
+        get: {
+          summary: 'Re-read one of your organization’s challenges (stage 10); anyone else’s is 404',
+          security: bearer,
+          'x-scope': 'query',
+          parameters: [{ name: 'id', in: 'path', required: true, schema: { type: 'string' } }],
+          responses: {
+            '200': {
+              description:
+                'the challenge with its status, resolution, and relationship when resolved',
+              content: {
+                'application/json': { schema: { $ref: '#/components/schemas/Challenge' } },
+              },
+            },
+            ...errorResponses(
+              [401, 'unauthorized'],
+              [403, 'scope_required'],
+              [404, 'not_found or feature_disabled'],
+            ),
+          },
+        },
+      },
+      '/v1/admin/challenges/{id}/resolve': {
+        post: {
+          summary:
+            'Operator resolution (stage 10, additive): upheld, rejected, or superseded; records a Relationship per claim the challenge bears on and bumps the evidence revision',
+          description:
+            'Requires IWIK_FEATURE_CHALLENGE=on (404 feature_disabled otherwise) and the operator token. ' +
+            'relationship.kind must match the resolution (upheld contradicts, rejected narrows, superseded ' +
+            'supersedes; anything else is 422 resolution_kind) and rationale is fixed vocabulary. The challenge’s ' +
+            'assertion is recorded as a counter-claim (origin reported); an upheld or superseded resolution marks ' +
+            'the targeted claims contradicted or rejected with corroboration disputed. Every resolution moves the ' +
+            'evidence revision (revision_log kind challenge), so query receipts of that protocol issued earlier ' +
+            'read stale. 409 challenge_resolved when already resolved. Audit rows carry ids only.',
+          security: [{ operatorToken: [] }],
+          'x-scope': 'operator',
+          parameters: [{ name: 'id', in: 'path', required: true, schema: { type: 'string' } }],
+          requestBody: {
+            required: true,
+            content: {
+              'application/json': { schema: { $ref: '#/components/schemas/ResolveRequest' } },
+            },
+          },
+          responses: {
+            '200': {
+              description: 'resolved',
+              content: {
+                'application/json': { schema: { $ref: '#/components/schemas/Resolved' } },
+              },
+            },
+            ...errorResponses(
+              [401, 'unauthorized'],
+              [404, 'not_found or feature_disabled'],
+              [409, 'challenge_resolved'],
+              [422, 'validation_failed'],
+            ),
+          },
+        },
+      },
+      '/v1/outcomes': {
+        post: {
+          summary:
+            'Register a prediction before its outcome is known, then report the observation against it (stage 10, two steps)',
+          description:
+            'Requires IWIK_FEATURE_CHALLENGE=on (404 feature_disabled otherwise, before authentication). ' +
+            'Step 1, { prediction }: based_on_receipt_id must be one of your query receipts; target.claim must be ' +
+            'one of the protocol’s permitted claims; horizon is a date not in the past. Returns 201 with the ' +
+            'Prediction (prediction_id, registered_at). Step 2, { prediction_id, observed }: records the ' +
+            'observation exactly once (409 outcome_exists on a second) and returns 201 with the Outcome, whose ' +
+            'prediction is exactly what was registered. The stored prediction can never be altered: a body that ' +
+            'carries prediction together with prediction_id is 409 prediction_immutable, and a restated target or ' +
+            'based_on_receipt_id that differs from the registered one is 409 target_mismatch. ' +
+            'observed.environment_changed is stored separately from observed.result.',
+          security: bearer,
+          'x-scope': 'publish',
+          requestBody: {
+            required: true,
+            content: {
+              'application/json': { schema: { $ref: '#/components/schemas/OutcomeRequest' } },
+            },
+          },
+          responses: {
+            '201': {
+              description: 'Prediction (step 1) or Outcome (step 2)',
+              content: {
+                'application/json': {
+                  schema: {
+                    oneOf: [
+                      { $ref: '#/components/schemas/Prediction' },
+                      { $ref: '#/components/schemas/Outcome' },
+                    ],
+                  },
+                },
+              },
+            },
+            ...errorResponses(
+              [401, 'unauthorized or node_revoked'],
+              [403, 'scope_required'],
+              [404, 'not_found (receipt, prediction, or run not yours) or feature_disabled'],
+              [409, 'prediction_immutable, target_mismatch, or outcome_exists'],
+              [422, 'validation_failed (shape, enum, claim_unknown, horizon in the past)'],
             ),
           },
         },

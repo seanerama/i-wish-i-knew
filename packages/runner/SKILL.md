@@ -1,7 +1,7 @@
 # I Wish I Knew — agent skill
 
 You are talking to a member node of a confidential evidence cooperative through
-`iwik mcp`. Ten tools, one envelope: `{ ok: true, data }` or
+`iwik mcp`. Eleven tools, one envelope: `{ ok: true, data }` or
 `{ ok: false, error: { code, message, next_step } }`. `next_step` is written
 for a human operator; relay it verbatim when you cannot act on it yourself.
 This document is guidance; the tools enforce the rules.
@@ -93,8 +93,49 @@ or earlier `submit_run` calls. Its effect is at the next evidence revision;
 receipts issued earlier read `stale`. When the deployment has it switched off
 the tool answers `feature_disabled`; say so and stop.
 
-`challenge_finding` and `report_outcome` answer `not_yet_available` until
-milestone 0.3 stage 10; do not promise them.
+## When to challenge and how to register a prediction
+
+Both need the `publish` scope and a deployment with the challenge ledger
+switched on (`IWIK_FEATURE_CHALLENGE`); when it is off the tools answer
+`feature_disabled` with a next step. Say so and stop.
+
+**Register a prediction BEFORE acting** (`register_prediction`). When the
+user is about to rely on a released answer (choose an option, set a
+threshold, ship a change), first record what is being relied on: the
+`receipt_id`, the `target` (a claim of that receipt, optionally a metric,
+statistic, and a threshold such as `p95 below 300 ms`), the `horizon` (the
+date by which the outcome will be observable), a `probability` when one is
+meaningful, and the `evaluation_rule` (`own_measurement`,
+`cooperative_requery`, or `operational_observation`). The prediction is
+stored with its registration time and can never be changed; keep the
+`prediction_id`. A prediction registered after the outcome is known is not a
+prediction, so register it in the same turn as the decision.
+
+**Report the outcome later** (`report_outcome`) with the `prediction_id`, the
+`result` (`met`, `not_met`, or `indeterminate`), and `environment_changed`
+(true when the provider, model, version, or workload moved since the
+prediction). A changed environment is recorded as such; do not call a
+prediction wrong because the world moved, and do not restate the prediction
+in the report: the stored one is what is judged. Each prediction is judged
+exactly once.
+
+**Challenge a finding** (`challenge_finding`) only with structured grounds:
+`method` (the calculation or protocol misapplies), `context_mismatch` (a
+required context key does not compare; name it in `statement.context_key`),
+`data_error` (a value cannot be right), `replication_failed` (this node ran
+the same protocol under the same filters and disagrees; name YOUR run in
+`statement.replication_run_id` and the `direction`), or `affiliation`
+(a commercial interest in the outcome). The target is a receipt this
+organization holds, or one claim released on it (`claim_id` from
+`result.findings[].claim_id`). `grounds.rationale` is a short note for the
+operator (at most 500 characters, no secrets, no hostnames, never shown to
+other members); it is not the objection itself. A challenge is recorded and
+resolved by the operator (`upheld`, `rejected`, or `superseded`); it never
+suppresses evidence by itself, and at most five per organization per day
+are accepted, so do not file one per number. Every resolution moves the
+evidence revision: receipts issued earlier read `stale`, so re-query before
+quoting again. Always name the `challenge_id` and `prediction_id` so the user
+can follow up.
 
 ## How to explain a suppressed or insufficient answer
 

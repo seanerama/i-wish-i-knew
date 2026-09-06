@@ -2,15 +2,153 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "urn:iwik:contracts:v1:Outcome",
   "title": "Outcome",
-  "description": "Observed outcome against a prior prediction (stub)",
+  "additionalProperties": false,
+  "description": "Observed outcome against a prior prediction (the prediction as registered)",
   "type": "object",
   "required": [
-    "outcome_id"
+    "outcome_id",
+    "prediction",
+    "observed",
+    "recorded_at"
   ],
   "properties": {
     "outcome_id": {
       "pattern": "^[0-9A-HJKMNP-TV-Z]{26}$",
       "description": "ULID identifier",
+      "type": "string"
+    },
+    "prediction": {
+      "additionalProperties": false,
+      "description": "A prediction registered before its outcome is known: target, horizon, probability, evaluation rule",
+      "type": "object",
+      "required": [
+        "prediction_id",
+        "based_on_receipt_id",
+        "protocol_ref",
+        "target",
+        "horizon",
+        "evaluation_rule",
+        "registered_at"
+      ],
+      "properties": {
+        "prediction_id": {
+          "pattern": "^[0-9A-HJKMNP-TV-Z]{26}$",
+          "description": "ULID identifier",
+          "type": "string"
+        },
+        "based_on_receipt_id": {
+          "pattern": "^[0-9A-HJKMNP-TV-Z]{26}$",
+          "description": "ULID identifier",
+          "type": "string"
+        },
+        "protocol_ref": {
+          "pattern": "^[a-z0-9][a-z0-9-]*/[a-z0-9][a-z0-9-]*@[1-9][0-9]*$",
+          "description": "Protocol reference: <pack>/<protocol>@<major>",
+          "type": "string"
+        },
+        "target": {
+          "additionalProperties": false,
+          "type": "object",
+          "required": [
+            "claim"
+          ],
+          "properties": {
+            "claim": {
+              "pattern": "^[a-z][a-z0-9_]*$",
+              "maxLength": 64,
+              "description": "Fixed-vocabulary key from a pack (claim, metric, or statistic name)",
+              "type": "string"
+            },
+            "metric": {
+              "pattern": "^[a-z][a-z0-9_]*$",
+              "maxLength": 64,
+              "description": "Fixed-vocabulary key from a pack (claim, metric, or statistic name)",
+              "type": "string"
+            },
+            "statistic": {
+              "pattern": "^[a-z][a-z0-9_]*$",
+              "maxLength": 64,
+              "description": "Fixed-vocabulary key from a pack (claim, metric, or statistic name)",
+              "type": "string"
+            },
+            "comparator": {
+              "type": "string",
+              "enum": [
+                "below",
+                "above",
+                "within"
+              ]
+            },
+            "value": {
+              "type": "number"
+            },
+            "unit": {
+              "maxLength": 16,
+              "pattern": "^[a-z%/0-9_]+$",
+              "type": "string"
+            }
+          }
+        },
+        "horizon": {
+          "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}$",
+          "type": "string"
+        },
+        "probability": {
+          "minimum": 0,
+          "maximum": 1,
+          "type": "number"
+        },
+        "evaluation_rule": {
+          "type": "string",
+          "enum": [
+            "own_measurement",
+            "cooperative_requery",
+            "operational_observation"
+          ],
+          "description": "How the outcome will be judged, fixed before it is known"
+        },
+        "registered_at": {
+          "format": "date-time",
+          "description": "RFC 3339 UTC timestamp",
+          "type": "string"
+        }
+      }
+    },
+    "observed": {
+      "additionalProperties": false,
+      "type": "object",
+      "required": [
+        "observed_at",
+        "result",
+        "environment_changed"
+      ],
+      "properties": {
+        "observed_at": {
+          "format": "date-time",
+          "description": "RFC 3339 UTC timestamp",
+          "type": "string"
+        },
+        "result": {
+          "type": "string",
+          "enum": [
+            "met",
+            "not_met",
+            "indeterminate"
+          ]
+        },
+        "environment_changed": {
+          "type": "boolean"
+        },
+        "evaluation_run_id": {
+          "pattern": "^[0-9A-HJKMNP-TV-Z]{26}$",
+          "description": "ULID identifier",
+          "type": "string"
+        }
+      }
+    },
+    "recorded_at": {
+      "format": "date-time",
+      "description": "RFC 3339 UTC timestamp",
       "type": "string"
     }
   }

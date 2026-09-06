@@ -1,5 +1,6 @@
-// The ten agent tools (contracts/agent-tools.md), each a thin projection of
-// one member-api call or one local runner action, wrapped in the common
+// The agent tools (contracts/agent-tools.md: the ten frozen tools plus the
+// stage 10 addition register_prediction), each a thin projection of one
+// member-api call or one local runner action, wrapped in the common
 // envelope `{ ok: true, data } | { ok: false, error: { code, message,
 // next_step } }`. Inputs and outputs are validated against the generated
 // schemas in contracts/schema/v1/tools/. Nothing here bypasses the disclosure
@@ -7,6 +8,7 @@
 // policy.json allows it and answers with the exact `iwik run --plan` command.
 import type {
   AnswerReceipt,
+  ChallengeStatement,
   ToolErrorEnvelope,
   ToolInput,
   ToolName,
@@ -19,10 +21,22 @@ import { nextStepFor } from './cooperative.js';
 import { ApiError, RunnerError } from './errors.js';
 import type { ErrorDetail } from './errors.js';
 import { loadConfig, loadToken, resolveHome } from './home.js';
+import {
+  CHALLENGE_GROUNDS,
+  CHALLENGE_NOTE_MAX_LENGTH,
+  EVALUATION_RULES,
+  OUTCOME_RESULTS,
+  challenge,
+  isChallengeGrounds,
+  isOutcomeResult,
+  outcome,
+  predict,
+} from './ledger.js';
 import { loadPlan, plan, planSummary, runPlanCommand } from './plan.js';
 import { loadPolicy, parseTarget, targetHost } from './policy.js';
 import { runPlan } from './run.js';
 import { preview, receipt, submit } from './submit.js';
+import { ULID_PATTERN } from './ulid.js';
 import { WITHDRAWAL_REASON_CODES, isWithdrawalReasonCode, withdraw } from './withdraw.js';
 
 export interface ToolContext {
@@ -34,11 +48,15 @@ export interface ToolContext {
 
 export type Envelope<N extends ToolName = ToolName> = ToolOutput<N>;
 
-/** Tools that exist on the surface but whose service side lands later in milestone 0.3 (stage 10). */
-export const NOT_YET_AVAILABLE: ReadonlySet<ToolName> = new Set<ToolName>([
-  'challenge_finding',
-  'report_outcome',
-]);
+/**
+ * Tools whose service side has not landed. Empty since stage 10 wired
+ * challenge_finding and report_outcome; kept so callers that consult it
+ * keep working.
+ */
+export const NOT_YET_AVAILABLE: ReadonlySet<ToolName> = new Set<ToolName>();
+
+const LEDGER_FLAG_STEP =
+  'The challenge and outcome ledger is disabled on this deployment (IWIK_FEATURE_CHALLENGE=off); nothing was sent. Ask the operator to enable it, then call the tool again.';
 
 function fail(code: string, message: string, nextStep?: string): ToolErrorEnvelope {
   return {
@@ -126,12 +144,24 @@ function clientFor(home: string, ctx: ToolContext): ApiClient {
   return new ApiClient(config.service_url, loadToken(home), ctx.fetch);
 }
 
-function notYetAvailable(tool: ToolName, anchor: string): ToolErrorEnvelope {
-  return fail(
-    'not_yet_available',
-    `${tool} is not available yet; nothing was sent`,
-    `Milestone 0.3 stage 10 (challenge and outcome ledger) adds the service side of ${tool}. Keep ${anchor} for when it lands.`,
-  );
+/** Common service answers of the ledger endpoints, with the operator's next step. */
+function ledgerError(err: unknown, tool: string): ToolErrorEnvelope {
+  if (err instanceof ApiError) {
+    if (err.apiCode === 'feature_disabled') return errorEnvelope(err, LEDGER_FLAG_STEP);
+    if (err.apiCode === 'not_found') {
+      return errorEnvelope(
+        err,
+        `The receipt, claim, prediction, or run named is not one of your organization's (the service does not say which) and nothing was recorded. Use ids from get_receipt, query_evidence, register_prediction, or iwik vault and call ${tool} again.`,
+      );
+    }
+    if (err.apiCode === 'rate_limited') {
+      return errorEnvelope(
+        err,
+        'At most 5 challenges per organization per rolling 24 hours; the earlier ones stand. Wait for the Retry-After period, and consider whether one challenge with a precise statement covers the objection.',
+      );
+    }
+  }
+  return errorEnvelope(err);
 }
 
 type Handler<N extends ToolName> = (
@@ -281,12 +311,142 @@ const handlers: { [N in ToolName]: Handler<N> } = {
     return ok<'get_receipt'>({ receipt: body });
   },
 
-  async challenge_finding(input) {
-    return notYetAvailable('challenge_finding', `receipt ${input.receipt_id} and your grounds`);
+  async challenge_finding(input, ctx, home) {
+    // The frozen input names the grounds as { kind, rationale }: `kind` must
+    // be one of the structured grounds and `rationale` is the one bounded
+    // note (operator-only). Nothing else free-form is sent.
+    if (!isChallengeGrounds(input.grounds.kind)) {
+      return fail(
+        'validation_failed',
+        'grounds.kind is not one of the structured grounds. Details (path rule): /grounds/kind enum.',
+        `Choose grounds.kind from: ${CHALLENGE_GROUNDS.join(', ')} and call challenge_finding again.`,
+      );
+    }
+    if (input.grounds.rationale.length > CHALLENGE_NOTE_MAX_LENGTH) {
+      return fail(
+        'validation_failed',
+        `grounds.rationale is longer than ${CHALLENGE_NOTE_MAX_LENGTH} characters. Details (path rule): /statement/note maxLength.`,
+        `Shorten grounds.rationale to at most ${CHALLENGE_NOTE_MAX_LENGTH} characters (it is a note for the operator, not the objection itself; put the objection in statement) and call challenge_finding again.`,
+      );
+    }
+    const statement: ChallengeStatement = {
+      ...(input.statement ?? {}),
+      note: input.grounds.rationale,
+    };
+    const target =
+      input.claim_id !== undefined
+        ? { kind: 'claim' as const, id: input.claim_id }
+        : { kind: 'receipt' as const, id: input.receipt_id };
+    try {
+      const filed = await challenge(target, {
+        home,
+        grounds: input.grounds.kind,
+        statement,
+        ...(ctx.fetch !== undefined ? { fetch: ctx.fetch } : {}),
+        ...(ctx.env !== undefined ? { env: ctx.env } : {}),
+      });
+      return ok<'challenge_finding'>({
+        challenge_id: filed.challenge_id,
+        status: filed.status,
+        grounds: filed.grounds,
+        filed_at: filed.filed_at,
+      });
+    } catch (err) {
+      if (err instanceof ApiError && err.apiCode === 'validation_failed') {
+        return errorEnvelope(
+          err,
+          'Fix the listed fields: grounds.kind from the structured grounds, statement fields in the pack vocabulary, a note of at most 500 characters with no secrets, and a receipt whose answer was released.',
+        );
+      }
+      return ledgerError(err, 'challenge_finding');
+    }
   },
 
-  async report_outcome(input) {
-    return notYetAvailable('report_outcome', `receipt ${input.receipt_id} and the observation`);
+  async report_outcome(input, ctx, home) {
+    // The frozen input is { receipt_id, observation, observed_at }; the
+    // structured members (stage 10, additive) may come at the top level or
+    // inside `observation`. The prediction must exist first.
+    const observation = input.observation as Record<string, unknown>;
+    const predictionId = input.prediction_id ?? observation['prediction_id'];
+    const result = input.result ?? observation['result'];
+    const environmentChanged = input.environment_changed ?? observation['environment_changed'];
+    const evaluationRunId = input.evaluation_run_id ?? observation['evaluation_run_id'];
+    if (typeof predictionId !== 'string' || !ULID_PATTERN.test(predictionId)) {
+      return fail(
+        'validation_failed',
+        'report_outcome needs the prediction_id of a prediction registered earlier. Details (path rule): /prediction_id required.',
+        'Call register_prediction with the receipt, target, horizon, and evaluation rule BEFORE acting; then report the outcome against the prediction_id it returns.',
+      );
+    }
+    if (!isOutcomeResult(result)) {
+      return fail(
+        'validation_failed',
+        'result is not one of the outcome results. Details (path rule): /result enum.',
+        `Set result (or observation.result) to one of: ${OUTCOME_RESULTS.join(', ')}. Use environment_changed: true when the environment moved, instead of calling the prediction wrong.`,
+      );
+    }
+    try {
+      const recorded = await outcome(predictionId, {
+        home,
+        result,
+        environmentChanged: environmentChanged === true,
+        observedAt: input.observed_at,
+        receiptId: input.receipt_id,
+        ...(typeof evaluationRunId === 'string' ? { evaluationRunId } : {}),
+        ...(ctx.fetch !== undefined ? { fetch: ctx.fetch } : {}),
+        ...(ctx.env !== undefined ? { env: ctx.env } : {}),
+      });
+      return ok<'report_outcome'>({
+        outcome_id: recorded.outcome_id,
+        prediction_id: recorded.prediction.prediction_id,
+        result: recorded.observed.result,
+        environment_changed: recorded.observed.environment_changed,
+        recorded_at: recorded.recorded_at,
+      });
+    } catch (err) {
+      if (err instanceof ApiError && err.apiCode === 'outcome_exists') {
+        return errorEnvelope(
+          err,
+          'This prediction already has its observation; a prediction is judged exactly once. Register a new prediction for a new expectation.',
+        );
+      }
+      if (err instanceof ApiError && err.apiCode === 'target_mismatch') {
+        return errorEnvelope(
+          err,
+          'receipt_id must be the receipt the prediction was registered against; the registered prediction cannot be changed. Use the receipt from register_prediction, or register a new prediction.',
+        );
+      }
+      return ledgerError(err, 'report_outcome');
+    }
+  },
+
+  async register_prediction(input, ctx, home) {
+    try {
+      const registered = await predict({
+        home,
+        receiptId: input.receipt_id,
+        target: input.target,
+        horizon: input.horizon,
+        ...(input.probability !== undefined ? { probability: input.probability } : {}),
+        evaluationRule: input.evaluation_rule,
+        ...(ctx.fetch !== undefined ? { fetch: ctx.fetch } : {}),
+        ...(ctx.env !== undefined ? { env: ctx.env } : {}),
+      });
+      return ok<'register_prediction'>({
+        prediction_id: registered.prediction_id,
+        registered_at: registered.registered_at,
+        horizon: registered.horizon,
+        evaluation_rule: registered.evaluation_rule,
+      });
+    } catch (err) {
+      if (err instanceof ApiError && err.apiCode === 'validation_failed') {
+        return errorEnvelope(
+          err,
+          `Fix the listed fields: target.claim must be one of the protocol's permitted claims (get_protocol), horizon a date (YYYY-MM-DD) not in the past, probability in [0, 1], evaluation_rule one of ${EVALUATION_RULES.join(', ')}.`,
+        );
+      }
+      return ledgerError(err, 'register_prediction');
+    }
   },
 
   async withdraw_contribution(input, ctx, home) {

@@ -2,15 +2,157 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "urn:iwik:contracts:v1:Challenge",
   "title": "Challenge",
-  "description": "Challenge against a finding (stub)",
+  "additionalProperties": false,
+  "description": "Challenge against a released finding: target, structured grounds, evaluation method, resolution",
   "type": "object",
   "required": [
-    "challenge_id"
+    "challenge_id",
+    "target",
+    "protocol_ref",
+    "grounds",
+    "statement",
+    "evaluation_method",
+    "status",
+    "filed_at"
   ],
   "properties": {
     "challenge_id": {
       "pattern": "^[0-9A-HJKMNP-TV-Z]{26}$",
       "description": "ULID identifier",
+      "type": "string"
+    },
+    "target": {
+      "additionalProperties": false,
+      "description": "A receipt the filer holds, or a claim released on one",
+      "type": "object",
+      "required": [
+        "kind",
+        "id"
+      ],
+      "properties": {
+        "kind": {
+          "type": "string",
+          "enum": [
+            "receipt",
+            "claim"
+          ]
+        },
+        "id": {
+          "pattern": "^[0-9A-HJKMNP-TV-Z]{26}$",
+          "description": "ULID identifier",
+          "type": "string"
+        }
+      }
+    },
+    "protocol_ref": {
+      "pattern": "^[a-z0-9][a-z0-9-]*/[a-z0-9][a-z0-9-]*@[1-9][0-9]*$",
+      "description": "Protocol reference: <pack>/<protocol>@<major>",
+      "type": "string"
+    },
+    "grounds": {
+      "type": "string",
+      "enum": [
+        "method",
+        "context_mismatch",
+        "data_error",
+        "replication_failed",
+        "affiliation"
+      ],
+      "description": "Structured grounds of a challenge (brief §7 \"Challenge handling\")"
+    },
+    "statement": {
+      "additionalProperties": false,
+      "type": "object",
+      "properties": {
+        "claim": {
+          "pattern": "^[a-z][a-z0-9_]*$",
+          "maxLength": 64,
+          "description": "Fixed-vocabulary key from a pack (claim, metric, or statistic name)",
+          "type": "string"
+        },
+        "metric": {
+          "pattern": "^[a-z][a-z0-9_]*$",
+          "maxLength": 64,
+          "description": "Fixed-vocabulary key from a pack (claim, metric, or statistic name)",
+          "type": "string"
+        },
+        "statistic": {
+          "pattern": "^[a-z][a-z0-9_]*$",
+          "maxLength": 64,
+          "description": "Fixed-vocabulary key from a pack (claim, metric, or statistic name)",
+          "type": "string"
+        },
+        "context_key": {
+          "pattern": "^[a-z][a-z0-9_]*(\\.[a-z][a-z0-9_]*)*$",
+          "description": "Dotted lowercase context key",
+          "type": "string"
+        },
+        "direction": {
+          "type": "string",
+          "enum": [
+            "higher",
+            "lower",
+            "different"
+          ]
+        },
+        "replication_run_id": {
+          "pattern": "^[0-9A-HJKMNP-TV-Z]{26}$",
+          "description": "ULID identifier",
+          "type": "string"
+        },
+        "note": {
+          "maxLength": 500,
+          "type": "string"
+        }
+      }
+    },
+    "evaluation_method": {
+      "type": "string",
+      "enum": [
+        "operator_review",
+        "replication",
+        "recalculation"
+      ],
+      "description": "How the challenge is evaluated"
+    },
+    "status": {
+      "type": "string",
+      "enum": [
+        "open",
+        "acknowledged",
+        "resolved"
+      ]
+    },
+    "resolution": {
+      "type": "string",
+      "enum": [
+        "upheld",
+        "rejected",
+        "superseded"
+      ]
+    },
+    "relationship_id": {
+      "pattern": "^[0-9A-HJKMNP-TV-Z]{26}$",
+      "description": "ULID identifier",
+      "type": "string"
+    },
+    "resolved_revision": {
+      "minimum": 0,
+      "type": "integer"
+    },
+    "filed_at": {
+      "format": "date-time",
+      "description": "RFC 3339 UTC timestamp",
+      "type": "string"
+    },
+    "acknowledged_at": {
+      "format": "date-time",
+      "description": "RFC 3339 UTC timestamp",
+      "type": "string"
+    },
+    "resolved_at": {
+      "format": "date-time",
+      "description": "RFC 3339 UTC timestamp",
       "type": "string"
     }
   }

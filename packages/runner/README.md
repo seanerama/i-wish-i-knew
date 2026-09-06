@@ -55,6 +55,14 @@ iwik preview <run_id> [--share private|cooperative]
 iwik submit <run_id>
 iwik receipt <id>
 iwik withdraw <run_id...> --reason member_request|data_error|policy_change   # needs IWIK_FEATURE_WITHDRAWAL=on on the service
+iwik challenge <receipt_id|claim:<claim_id>> --grounds method|context_mismatch|data_error|replication_failed|affiliation
+         [--note <text>] [--claim <key>] [--metric <key>] [--statistic <key>] [--context-key <key>]
+         [--direction higher|lower|different] [--replication-run <run_id>]   # needs IWIK_FEATURE_CHALLENGE=on
+iwik predict --receipt <id> --target <claim>[.<metric>[.<statistic>]] --horizon YYYY-MM-DD
+         --rule own_measurement|cooperative_requery|operational_observation
+         [--probability p] [--below n | --above n | --within n] [--unit u]   # register BEFORE acting
+iwik outcome <prediction_id> --result met|not_met|indeterminate [--environment-changed]
+         [--observed-at <rfc3339>] [--receipt <id>] [--evaluation-run <run_id>]
 iwik vault
 iwik plans <plan_id>
 iwik mcp [--packs-dir <dir>]                     # needs IWIK_MCP_ENABLED=on
@@ -297,7 +305,8 @@ DNS lookups as such or non-Node harnesses (a non-Node runtime is a v2
 
 ## MCP adapter (`iwik mcp`)
 
-`iwik mcp` serves the ten tools of `contracts/agent-tools.md` over stdio with
+`iwik mcp` serves the ten tools of `contracts/agent-tools.md` (plus the
+additive stage 10 tool `register_prediction`) over stdio with
 `@modelcontextprotocol/sdk` (`Server` + `StdioServerTransport`; there is no
 hosted endpoint, ADR-0006). Each tool's `inputSchema` and `outputSchema` are
 the committed `contracts/schema/v1/tools/<tool>.<input|output>.schema.json`
@@ -317,7 +326,9 @@ instructions.
 | `submit_run`           | `iwik submit`; refuses without a preview                                                                                         |
 | `get_receipt`          | `GET /v1/receipts/{id}` (intake or query receipts)                                                                               |
 | `withdraw_contribution` | `iwik withdraw`; `run_ids` plus a `reason_code` (`member_request`, `data_error`, `policy_change`; the legacy free-text `reason` is never sent); returns `withdrawal_id` and `effective_revision`; `feature_disabled` with a next step when the deployment has `IWIK_FEATURE_WITHDRAWAL` off |
-| `challenge_finding`, `report_outcome` | present and frozen; answer `not_yet_available` with a `next_step` naming milestone 0.3 stage 10             |
+| `challenge_finding`    | `iwik challenge`; `POST /v1/challenges` against `receipt_id` (or `claim_id`) with `grounds.kind` from `method`, `context_mismatch`, `data_error`, `replication_failed`, `affiliation`, `grounds.rationale` as the one bounded operator-only note (500 chars), and an optional `statement` in the pack vocabulary; returns `challenge_id` and `status`; `feature_disabled` with a next step when `IWIK_FEATURE_CHALLENGE` is off; `rate_limited` after 5 per organization per day |
+| `register_prediction`  | `iwik predict` (stage 10, additive tool); `POST /v1/outcomes { prediction }` BEFORE acting: `receipt_id`, `target` (claim, metric, statistic, threshold), `horizon`, optional `probability`, `evaluation_rule`; returns `prediction_id` |
+| `report_outcome`       | `iwik outcome`; `POST /v1/outcomes { prediction_id, observed }` with `result` (`met`, `not_met`, `indeterminate`) and `environment_changed` (top level or inside `observation`); the stored prediction is never altered (`prediction_immutable`, `target_mismatch`); one observation per prediction (`outcome_exists`) |
 
 **Dark-launch flag:** `IWIK_MCP_ENABLED` (default off). Without it `iwik mcp`
 exits `3` with `feature_disabled` and says why. Attach to Claude Code with
@@ -359,7 +370,7 @@ the local report (header, schema, claims, Markdown), `signed_at` reuse rules,
 the SDK client (the ten tools with the committed schemas verbatim, the
 kill-switch, `plan_test` → `run_test` denied → policy → `run_test` →
 `preview_contribution` → `submit_run` → `get_receipt`, `query_evidence` →
-`insufficient_evidence`, `withdraw_contribution`, the two `not_yet_available`
-tools) against an
+`insufficient_evidence`, `withdraw_contribution`, `challenge_finding`,
+`register_prediction`, `report_outcome`) against an
 in-process mirror of the member-api. The full walking skeleton against the
 real service and PostgreSQL lives in `packages/service/test/spine.test.ts`.

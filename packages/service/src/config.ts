@@ -84,6 +84,15 @@ export interface Config {
    * `cohort_too_large` before any body is opened.
    */
   queryCohortCap: number;
+  /**
+   * Stage 10: the challenge and outcome ledger (`POST /v1/challenges`,
+   * `POST /v1/outcomes`, the operator resolve endpoint and console page,
+   * the MCP tools behind them). Default OFF everywhere: off, the endpoints
+   * answer 404 feature_disabled before authentication and the console pages
+   * are 404. Claim rows are still written on release, so turning the flag on
+   * later needs no backfill.
+   */
+  featureChallenge: boolean;
 }
 
 const here = dirname(fileURLToPath(import.meta.url));
@@ -252,5 +261,6 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
     workerIntervalMs: positiveInt(env['IWIK_WORKER_INTERVAL_MS'], 5000, 'IWIK_WORKER_INTERVAL_MS'),
     featureCooperativeQuery: flag(env['IWIK_FEATURE_COOPERATIVE_QUERY'], false),
     queryCohortCap: positiveInt(env['IWIK_QUERY_COHORT_CAP'], 500, 'IWIK_QUERY_COHORT_CAP'),
+    featureChallenge: flag(env['IWIK_FEATURE_CHALLENGE'], false),
   };
 }

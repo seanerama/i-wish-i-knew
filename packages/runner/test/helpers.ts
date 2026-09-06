@@ -180,6 +180,14 @@ export interface FakeService {
   >;
   /** Stage 7: when false the withdrawal endpoint answers 404 feature_disabled. */
   withdrawalEnabled: boolean;
+  /** Stage 10: challenges filed, by id; predictions by id with their observation once reported. */
+  challenges: Map<string, Record<string, unknown>>;
+  predictions: Map<
+    string,
+    { prediction: Record<string, unknown>; outcome?: Record<string, unknown> }
+  >;
+  /** Stage 10: when false the ledger endpoints answer 404 feature_disabled. */
+  challengeEnabled: boolean;
   pubkey: string;
   lastBody: unknown;
   close: () => Promise<void>;
@@ -209,6 +217,9 @@ export function fakeService(): Promise<FakeService> {
     queries: [],
     withdrawals: new Map(),
     withdrawalEnabled: true,
+    challenges: new Map(),
+    predictions: new Map(),
+    challengeEnabled: true,
     pubkey: '',
     lastBody: undefined,
     close: () => new Promise<void>((resolve) => state.server.close(() => resolve())),
@@ -252,6 +263,13 @@ export function fakeService(): Promise<FakeService> {
       context_filters?: unknown;
       run_ids?: unknown;
       reason_code?: unknown;
+      target?: unknown;
+      grounds?: unknown;
+      statement?: unknown;
+      prediction?: unknown;
+      prediction_id?: unknown;
+      observed?: unknown;
+      based_on_receipt_id?: unknown;
     };
     try {
       body = JSON.parse(text) as typeof body;
@@ -259,6 +277,96 @@ export function fakeService(): Promise<FakeService> {
       return error(res, 400, 'bad_json');
     }
     state.lastBody = body;
+    // Stage 10: the ledger, mirrored just closely enough for the runner side.
+    if (req.method === 'POST' && url === '/v1/challenges') {
+      if (!state.challengeEnabled) return error(res, 404, 'feature_disabled');
+      const target = body.target as { kind?: unknown; id?: unknown } | undefined;
+      const details: unknown[] = [];
+      if (
+        !['method', 'context_mismatch', 'data_error', 'replication_failed', 'affiliation'].includes(
+          String(body.grounds),
+        )
+      ) {
+        details.push({ path: '/grounds', rule: 'enum' });
+      }
+      const note = (body.statement as { note?: unknown } | undefined)?.note;
+      if (typeof note === 'string' && note.length > 500)
+        details.push({ path: '/statement/note', rule: 'maxLength' });
+      if (typeof note === 'string' && /AKIA[A-Z0-9]{16}/.test(note))
+        details.push({ path: '/statement/note', rule: 'secret_pattern' });
+      if (details.length > 0) return error(res, 422, 'validation_failed', details);
+      if (target?.kind === 'receipt' && !state.receipts.has(String(target.id)))
+        return error(res, 404, 'not_found');
+      if (target?.kind === 'claim' && String(target.id).endsWith('FXR'))
+        return error(res, 404, 'not_found');
+      if (state.challenges.size >= 5) {
+        res.writeHead(429, { 'content-type': 'application/json', 'retry-after': '3600' });
+        return res.end(
+          JSON.stringify({ error: { code: 'rate_limited', message: 'rate_limited' } }),
+        );
+      }
+      const challengeId = id();
+      const challenge = {
+        challenge_id: challengeId,
+        target,
+        protocol_ref: 'inference-api/latency@1',
+        grounds: body.grounds,
+        statement: body.statement ?? {},
+        evaluation_method: 'operator_review',
+        status: 'open',
+        filed_at: new Date().toISOString(),
+      };
+      state.challenges.set(challengeId, challenge);
+      return json(res, 201, challenge);
+    }
+    if (req.method === 'POST' && url === '/v1/outcomes') {
+      if (!state.challengeEnabled) return error(res, 404, 'feature_disabled');
+      if (typeof body.prediction_id === 'string' && body.prediction !== undefined) {
+        return error(res, 409, 'prediction_immutable');
+      }
+      if (body.prediction !== undefined) {
+        const p = body.prediction as Record<string, unknown>;
+        if (!state.receipts.has(String(p['based_on_receipt_id'])))
+          return error(res, 404, 'not_found');
+        const target = p['target'] as { claim?: unknown } | undefined;
+        if (!['latency_distribution', 'error_rate'].includes(String(target?.claim))) {
+          return error(res, 422, 'validation_failed', [
+            { path: '/prediction/target/claim', rule: 'claim_unknown' },
+          ]);
+        }
+        const predictionId = id();
+        const prediction = {
+          prediction_id: predictionId,
+          based_on_receipt_id: p['based_on_receipt_id'],
+          protocol_ref: 'inference-api/latency@1',
+          target: p['target'],
+          horizon: p['horizon'],
+          ...(p['probability'] !== undefined ? { probability: p['probability'] } : {}),
+          evaluation_rule: p['evaluation_rule'],
+          registered_at: new Date().toISOString(),
+        };
+        state.predictions.set(predictionId, { prediction });
+        return json(res, 201, prediction);
+      }
+      const entry = state.predictions.get(String(body.prediction_id));
+      if (entry === undefined) return error(res, 404, 'not_found');
+      if (
+        typeof body.based_on_receipt_id === 'string' &&
+        body.based_on_receipt_id !== entry.prediction['based_on_receipt_id']
+      ) {
+        return error(res, 409, 'target_mismatch');
+      }
+      if (entry.outcome !== undefined) return error(res, 409, 'outcome_exists');
+      const observed = body.observed as Record<string, unknown>;
+      const outcome = {
+        outcome_id: id(),
+        prediction: entry.prediction,
+        observed,
+        recorded_at: new Date().toISOString(),
+      };
+      entry.outcome = outcome;
+      return json(res, 201, outcome);
+    }
     if (req.method === 'POST' && url === '/v1/withdrawals') {
       if (!state.withdrawalEnabled) return error(res, 404, 'feature_disabled');
       const ids = body.run_ids;

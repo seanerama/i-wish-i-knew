@@ -1,0 +1,86 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title><%= it.product %> - open challenges</title>
+    <%~ include('_style') %>
+  </head>
+  <body>
+    <header>
+      <h1><%= it.product %></h1>
+      <p class="tagline">Open challenges: structured grounds and the kind of target, nothing else (the filing organization and the note stay with the record).</p>
+    </header>
+
+    <% if (it.notice) { %>
+      <p class="notice" id="notice">
+        <% if (it.notice === 'resolved') { %>Challenge resolved. A relationship was recorded for every claim it bears on and the evidence revision moved: query receipts of that protocol issued earlier now read <code>stale</code>.<% } %>
+        <% if (it.notice === 'acknowledged') { %>Challenge acknowledged.<% } %>
+      </p>
+    <% } %>
+    <% if (it.error) { %>
+      <p class="error-box" id="error">
+        <% if (it.error === 'unknown') { %>No open challenge with that id.<% } %>
+        <% if (it.error === 'already_resolved') { %>That challenge was already resolved; nothing changed.<% } %>
+        <% if (it.error === 'resolution') { %>Choose a resolution: upheld, rejected, or superseded.<% } %>
+        <% if (it.error === 'rationale') { %>Choose a rationale from the list.<% } %>
+        <% if (it.error === 'confirm') { %>Tick the confirmation box to resolve: a resolution is recorded permanently and moves the evidence revision.<% } %>
+      </p>
+    <% } %>
+
+    <section aria-labelledby="challenges-heading">
+      <h2 id="challenges-heading">Open challenges</h2>
+      <p class="muted">Resolving records a relationship (<code>upheld</code> contradicts the claim, <code>rejected</code> narrows it, <code>superseded</code> supersedes it), bumps the evidence revision, and cannot be undone. Grounds are the filer's structured objection; the rationale is yours.</p>
+      <% if (it.challenges.length === 0) { %>
+        <p class="muted" id="no-challenges">No open challenges.</p>
+      <% } else { %>
+        <table id="challenges">
+          <thead><tr><th>Challenge</th><th>Protocol</th><th>Target</th><th>Grounds</th><th>Status</th><th>Filed</th><th>Resolve</th></tr></thead>
+          <tbody>
+            <% for (const c of it.challenges) { %>
+              <tr id="challenge-<%= c.challenge_id %>">
+                <td class="mono"><%= c.challenge_id %></td>
+                <td class="mono"><%= c.protocol_ref %></td>
+                <td><%= c.target_kind %></td>
+                <td><code class="grounds"><%= c.grounds %></code></td>
+                <td><%= c.status %></td>
+                <td><%= c.filed_at %></td>
+                <td>
+                  <form method="post" action="/admin/challenges/<%= c.challenge_id %>/resolve" class="resolve">
+                    <input type="hidden" name="_csrf" value="<%= it.csrf %>" />
+                    <% if (c.status === 'open') { %>
+                      <button type="submit" name="action" value="acknowledge">Acknowledge</button>
+                    <% } %>
+                    <label for="resolution-<%= c.challenge_id %>">Resolution</label>
+                    <select id="resolution-<%= c.challenge_id %>" name="resolution" required>
+                      <option value="">choose</option>
+                      <% for (const r of it.resolutions) { %>
+                        <option value="<%= r %>"><%= r %> (<%= it.relationship_of[r] %>)</option>
+                      <% } %>
+                    </select>
+                    <label for="rationale-<%= c.challenge_id %>">Rationale</label>
+                    <select id="rationale-<%= c.challenge_id %>" name="rationale" required>
+                      <option value="">choose</option>
+                      <% for (const r of it.rationales) { %>
+                        <option value="<%= r %>"><%= r %></option>
+                      <% } %>
+                    </select>
+                    <label><input type="checkbox" name="confirm" /> I understand this is recorded permanently and moves the evidence revision.</label>
+                    <button type="submit" name="action" value="resolve" class="danger">Resolve</button>
+                  </form>
+                </td>
+              </tr>
+            <% } %>
+          </tbody>
+        </table>
+      <% } %>
+    </section>
+
+    <form method="post" action="/admin/logout">
+      <input type="hidden" name="_csrf" value="<%= it.csrf %>" />
+      <button type="submit">Sign out</button>
+    </form>
+
+    <footer><a href="/">Back to the console</a></footer>
+  </body>
+</html>

@@ -36,6 +36,30 @@
               "pattern": "^[0-9A-HJKMNP-TV-Z]{26}$",
               "description": "ULID identifier",
               "type": "string"
+            },
+            "status": {
+              "type": "string",
+              "enum": [
+                "open",
+                "acknowledged",
+                "resolved"
+              ]
+            },
+            "grounds": {
+              "type": "string",
+              "enum": [
+                "method",
+                "context_mismatch",
+                "data_error",
+                "replication_failed",
+                "affiliation"
+              ],
+              "description": "Structured grounds of a challenge (brief §7 \"Challenge handling\")"
+            },
+            "filed_at": {
+              "format": "date-time",
+              "description": "RFC 3339 UTC timestamp",
+              "type": "string"
             }
           }
         }

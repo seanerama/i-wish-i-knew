@@ -299,7 +299,14 @@ export type AuditEvent =
   | 'token.issued'
   | 'token.revoked'
   | 'console.login'
-  | 'console.password_reset';
+  | 'console.password_reset'
+  // Stage 10: the ledger. Targets are challenge / prediction / outcome ids.
+  | 'challenge.filed'
+  | 'challenge.acknowledged'
+  | 'challenge.resolved'
+  | 'prediction.registered'
+  | 'outcome.recorded'
+  | 'console.operator_login';
 
 /** Identifiers only: who (operator / login id) did what to which id. */
 export async function audit(
