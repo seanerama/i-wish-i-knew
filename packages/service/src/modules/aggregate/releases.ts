@@ -13,6 +13,7 @@ import type { Queryable } from '../../db.js';
 import { latestRevisionFor } from '../intake/index.js';
 import type { OrgRange, RunRange } from '../cohort/index.js';
 import { ulid } from '../../ulid.js';
+import { membersHash } from './policy.js';
 
 export type OutcomeStatus = 'released' | 'suppressed' | 'insufficient_evidence';
 
@@ -75,6 +76,34 @@ export async function priorMemberSets(
     [protocolRef],
   );
   return res.rows.map((r) => new Set(r.member_org_hashes));
+}
+
+/**
+ * Whether a pinned cohort still reproduces the release first recorded at
+ * that revision for the same protocol and filters: same member set and the
+ * same run count. Undefined when nothing was released there (nothing to
+ * reproduce). Compares hashes and a count only; says nothing about who.
+ */
+export async function pinnedReleaseReproduced(
+  db: Queryable,
+  protocolRef: string,
+  filters: Record<string, ContextValue>,
+  revision: number,
+  memberOrgHashes: readonly string[],
+  runCount: number,
+): Promise<boolean | undefined> {
+  const res = await db.query<{ member_orgs_hash: string; run_count: number }>(
+    `SELECT member_orgs_hash, run_count FROM evidence.cohort_releases
+      WHERE protocol_ref = $1 AND revision = $2 AND filters = $3::jsonb
+      ORDER BY released_at, release_id LIMIT 1`,
+    [protocolRef, revision, JSON.stringify(filters)],
+  );
+  const original = res.rows[0];
+  if (original === undefined) return undefined;
+  return (
+    original.member_orgs_hash === membersHash(memberOrgHashes) &&
+    Number(original.run_count) === runCount
+  );
 }
 
 export interface ReleaseRecord {

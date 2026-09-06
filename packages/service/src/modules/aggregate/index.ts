@@ -10,7 +10,10 @@
 // Stage 9, behind the flag, is the real thing:
 //
 //   1. hard compatibility and filters (modules/matching), pinned at
-//      `as_of_revision` or the current revision;
+//      `as_of_revision` or the current revision; a withdrawn run is never a
+//      candidate, pin or no pin (ADR-0002 §6), so a pinned answer whose
+//      cohort no longer matches the release recorded at that revision says
+//      so with a fixed limitation, or is suppressed as usual;
 //   2. the answer cache keyed by (query_digest, revision), valid only while
 //      the revision is the latest that touched the protocol (releases.ts);
 //   3. on a miss: the candidate count first (zero -> insufficient_evidence;
@@ -75,6 +78,7 @@ import {
 } from './policy.js';
 import {
   cacheKey,
+  pinnedReleaseReproduced,
   priorMemberSets,
   readCachedOutcome,
   recordRelease,
@@ -84,6 +88,14 @@ import type { CooperativeOutcome } from './releases.js';
 
 export { CALCULATION_VERSION } from './calc.js';
 export { POLICY_VERSION } from './policy.js';
+
+/**
+ * The fixed limitation a pinned answer carries when its cohort no longer
+ * matches the release first recorded at the pinned revision (a withdrawal
+ * since then). Never says what changed.
+ */
+export const PINNED_NOT_REPRODUCIBLE =
+  'Pinned cohort no longer reproducible: contributions changed since the pinned revision.';
 
 export interface AggregateDeps {
   pool: Pool;
@@ -292,6 +304,8 @@ async function resolveOutcome(
   protocol: ProtocolVersion,
   claims: Record<string, unknown>,
   spec: MatchSpec,
+  /** Whether the query pinned `as_of_revision` (the reproducibility check applies). */
+  pinned: boolean,
   log: { info(obj: Record<string, unknown>, msg: string): void },
 ): Promise<Resolved> {
   const count = await countCandidates(deps.pool, spec);
@@ -345,17 +359,28 @@ async function resolveOutcome(
   }
   const key = cohortHashKey(deps.config.kek);
   const members = [...new Set(samples.map((s) => orgHash(key, s.org_ref)))].sort();
+  const sections = releaseSections({
+    computation,
+    requiredContext: protocol.required_context,
+    filterKeys,
+  });
+  if (pinned) {
+    // A pin reproduces the release recorded at that revision only while its
+    // members and runs are all still there (withdrawn runs never re-enter).
+    const reproduced = await pinnedReleaseReproduced(
+      deps.pool,
+      protocol.ref,
+      spec.filters,
+      spec.revision,
+      members,
+      samples.length,
+    );
+    if (reproduced === false) {
+      sections.limitations = [PINNED_NOT_REPRODUCIBLE, ...(sections.limitations ?? [])];
+    }
+  }
   return {
-    outcome: {
-      status: 'released',
-      orgs,
-      runs,
-      sections: releaseSections({
-        computation,
-        requiredContext: protocol.required_context,
-        filterKeys,
-      }),
-    },
+    outcome: { status: 'released', orgs, runs, sections },
     release: { member_org_hashes: members, org_count: members.length, run_count: samples.length },
     cohort_formed: true,
   };
@@ -389,7 +414,14 @@ async function cooperativeAnswer(
     // Cached outcomes always come from a formed cohort (see the write below).
     resolved = { outcome: cached, cohort_formed: true };
   } else {
-    resolved = await resolveOutcome(deps, protocol, entry.claims, spec, log);
+    resolved = await resolveOutcome(
+      deps,
+      protocol,
+      entry.claims,
+      spec,
+      query.as_of_revision !== undefined,
+      log,
+    );
   }
 
   const own = await ownEvidence(deps.pool, {

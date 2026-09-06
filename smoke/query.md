@@ -86,10 +86,14 @@ A run against the stub with `--target-kind fixture` is never releasable
    - Expect `"status": "stale"` and nothing else changed in the receipt.
      `/receipts/<receipt_id>` reads `Status: stale`.
 10. Query again as A with `--as-of <evidence_revision from the step 6 receipt>`.
-    - Expect `released` with the same distributions as step 6 (the pinned
-      cohort still includes R_A) and own evidence showing R_A `in cohort: yes`;
-      without `--as-of`, R_A is listed with `withdrawn` and the cohort answer is
-      whatever the current members allow.
+    - Expect a withdrawn run never to come back: own evidence lists R_A with
+      `withdrawn` and `in cohort: no`, pin or no pin. With five runs from the
+      same three organizations left, the pinned answer is `released` with
+      distributions that no longer equal step 6 and a **Limitations** entry
+      reading exactly `Pinned cohort no longer reproducible: contributions
+      changed since the pinned revision.` (had the withdrawal left fewer than
+      five runs or three organizations, the pinned answer would be
+      `suppressed` instead). Nothing says which run or organization changed.
 11. Set `IWIK_FEATURE_COOPERATIVE_QUERY=off` again and restart.
     - Expect step 2's stub answer to return over the same evidence.
 

@@ -23,7 +23,6 @@ interface OwnRow {
   sharing_policy: string;
   backfill_version: number | null;
   withdrawn_at: Date | null;
-  withdrawn_revision: string | number | null;
   is_fixture: boolean;
   duplicate_of: string | null;
   index_version: number | null;
@@ -61,12 +60,8 @@ export function classifyOwnRun(row: OwnRow, spec: OwnEvidenceSpec): OwnRunReason
   if (row.duplicate_of !== null) reasons.push('duplicate');
   if (row.sharing_policy !== 'cooperative' || row.backfill_version === null)
     reasons.push('private');
-  if (
-    row.withdrawn_at !== null &&
-    (row.withdrawn_revision === null || Number(row.withdrawn_revision) <= spec.revision)
-  ) {
-    reasons.push('withdrawn');
-  }
+  // Withdrawn is withdrawn, whatever revision the query pins (ADR-0002 §6).
+  if (row.withdrawn_at !== null) reasons.push('withdrawn');
   if (Number(row.evidence_revision) > spec.revision) reasons.push('after_as_of');
   if (!spec.protocol.compatibility.harness_digests.includes(row.harness_digest)) {
     reasons.push('harness_incompatible');
@@ -81,7 +76,7 @@ export function classifyOwnRun(row: OwnRow, spec: OwnEvidenceSpec): OwnRunReason
 export async function ownEvidence(db: Queryable, spec: OwnEvidenceSpec): Promise<OwnEvidence> {
   const res = await db.query<OwnRow>(
     `SELECT run_id, received_at, evidence_revision, execution_status, sharing_policy,
-            backfill_version, withdrawn_at, withdrawn_revision, is_fixture, duplicate_of,
+            backfill_version, withdrawn_at, is_fixture, duplicate_of,
             index_version, index_context, harness_digest
        FROM evidence.runs
       WHERE org_ref = $1 AND protocol_ref = $2

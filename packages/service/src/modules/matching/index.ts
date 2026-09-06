@@ -12,9 +12,14 @@
 //     failed (excluded / unobserved runs are accounting, never evidence),
 //   - matches every `context_filters` key exactly in its plaintext index
 //     projection (`index_context @> filter`), and
-//   - exists at the pinned evidence revision: accepted at or before it and
-//     not withdrawn at or before it (`as_of_revision`; the current revision
-//     when the query does not pin one).
+//   - is not withdrawn, whatever the pin (ADR-0002 §6: a withdrawal affects
+//     every future query, so a withdrawn run never enters a newly issued
+//     receipt), and
+//   - was accepted at or before the pinned evidence revision
+//     (`as_of_revision`; the current revision when the query does not pin
+//     one). A pin therefore reproduces an earlier cohort only while nobody
+//     has withdrawn from it; when it cannot, the receipt says so through a
+//     fixed limitation (aggregate/index.ts) or is suppressed as usual.
 // Only the protocol's `required_context` keys are projected, so only they
 // can filter: any other key is `422 not_indexed`, as the stage 8 operator
 // endpoint answers.
@@ -83,9 +88,8 @@ const CANDIDATE_WHERE = `
         AND harness_digest = ANY($2::text[])
         AND execution_status = ANY($3::text[])
         AND index_context @> $4::jsonb
-        AND evidence_revision <= $5
-        AND (withdrawn_at IS NULL
-             OR (withdrawn_revision IS NOT NULL AND withdrawn_revision > $5))`;
+        AND withdrawn_at IS NULL
+        AND evidence_revision <= $5`;
 
 function params(spec: MatchSpec): unknown[] {
   return [

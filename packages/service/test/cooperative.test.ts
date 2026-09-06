@@ -23,6 +23,7 @@ import { loadConfig } from '../src/config.js';
 import { ApiError } from '../src/errors.js';
 import {
   CALCULATION_VERSION,
+  PINNED_NOT_REPRODUCIBLE,
   POLICY_VERSION,
   STUB_CALCULATION_VERSION,
   listOwnQueryReceipts,
@@ -545,7 +546,7 @@ test('differencing: a narrowed re-query whose cohort drops one organization is s
   assert.ok(!bad.body.includes(secret));
 });
 
-test('withdrawal: the prior receipt reads stale, the re-query is recomputed; as_of_revision reproduces the earlier cohort', async () => {
+test('withdrawal: the prior receipt reads stale, the re-query is recomputed; a pin never readmits a withdrawn run and says the release is no longer reproducible', async () => {
   // r6: A 20 and 40, B 22 and 28, C 24 and 26 -> p50 spread max 40; after A withdraws the 40 run, max 28.
   const aRuns = remember(
     A,
@@ -574,6 +575,15 @@ test('withdrawal: the prior receipt reads stale, the re-query is recomputed; as_
   assert.equal(pinned, await currentRevision(t.app.iwik.pool));
   assert.equal(spreadOf(before, 'latency_distribution', 'ttft_ms', 'p50')?.max, 40);
   assert.equal(spreadOf(before, 'latency_distribution', 'ttft_ms', 'p50')?.p50, 24);
+  // while nothing has changed, a pin at that revision reproduces the release exactly
+  const intact = await query(B.token, {
+    context_filters: { client_region: 'r6' },
+    as_of_revision: pinned,
+  });
+  assert.equal(intact.status, 'released');
+  assert.deepEqual(intact.result?.distributions, before.result?.distributions);
+  assert.ok(!intact.result?.limitations?.includes(PINNED_NOT_REPRODUCIBLE));
+  assert.notEqual(intact.query_digest, before.query_digest, 'the pin is part of the query');
 
   const withdrawn = await t.app.inject({
     method: 'POST',
@@ -601,28 +611,35 @@ test('withdrawal: the prior receipt reads stale, the re-query is recomputed; as_
   });
   assert.equal(afterwards.cohort.runs, '5-10');
 
-  // pinning at the pre-withdrawal revision reproduces the earlier cohort
-  const reproduced = await query(B.token, {
+  // ADR-0002 §6: a withdrawn run never re-enters a newly issued receipt, pin
+  // or no pin. The pinned cohort is now the five remaining runs, so the
+  // answer is released (same three organizations) with the fixed limitation
+  // that the pinned release is no longer reproducible; nothing says what changed.
+  const repinned = await query(B.token, {
     context_filters: { client_region: 'r6' },
     as_of_revision: pinned,
   });
-  assert.equal(reproduced.status, 'released');
-  assert.equal(reproduced.evidence_revision, pinned);
+  assert.equal(repinned.status, 'released');
+  assert.equal(repinned.evidence_revision, pinned);
+  assert.equal(repinned.query_digest, intact.query_digest);
   assert.deepEqual(
-    reproduced.result?.distributions,
-    before.result?.distributions,
-    'same numbers as before the withdrawal',
+    repinned.result?.distributions,
+    afterwards.result?.distributions,
+    'the withdrawn run is gone from the pinned cohort too',
   );
-  assert.notEqual(reproduced.query_digest, before.query_digest, 'the pin is part of the query');
-  // A's withdrawn run is in the pinned cohort and out of the current one, and A can see both facts
+  assert.notDeepEqual(repinned.result?.distributions, before.result?.distributions);
+  assert.equal(repinned.result?.limitations?.[0], PINNED_NOT_REPRODUCIBLE);
+  assert.ok(!JSON.stringify(repinned).includes(aRuns[1] as string));
+  assert.doesNotMatch(PINNED_NOT_REPRODUCIBLE, CAUSAL_WORDS);
+  // A sees its withdrawn run as withdrawn under the pin as well, out of the cohort
   const asAPinned = await query(A.token, {
     context_filters: { client_region: 'r6' },
     as_of_revision: pinned,
   });
-  assert.equal(
-    asAPinned.result?.own_evidence?.runs.find((r) => r.run_id === aRuns[1])?.in_cohort,
-    true,
-  );
+  const withdrawnUnderPin = asAPinned.result?.own_evidence?.runs.find((r) => r.run_id === aRuns[1]);
+  assert.deepEqual(withdrawnUnderPin?.reasons, ['withdrawn']);
+  assert.equal(withdrawnUnderPin?.in_cohort, false);
+  assert.equal(asAPinned.result?.own_evidence?.in_cohort, 1);
   const asANow = await query(A.token, { context_filters: { client_region: 'r6' } });
   assert.deepEqual(asANow.result?.own_evidence?.runs.find((r) => r.run_id === aRuns[1])?.reasons, [
     'withdrawn',

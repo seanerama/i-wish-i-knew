@@ -521,7 +521,10 @@ export function buildOpenApi(): Record<string, unknown> {
             'non-duplicate runs of the protocol executed with a compatible harness digest whose indexed required ' +
             'context matches every context_filters key exactly (a filter key outside required_context is 422 ' +
             'not_indexed); as_of_revision pins the cohort at an earlier evidence revision (422 maximum when above ' +
-            'the current one). Policy 2026-09-p1 releases only with at least 3 organizations, 5 runs, no ' +
+            'the current one): runs accepted at or before it, but never a withdrawn run, whatever the pin ' +
+            '(ADR-0002 §6), so a pinned answer whose cohort no longer matches the release recorded at that ' +
+            'revision carries the limitation "Pinned cohort no longer reproducible: contributions changed since ' +
+            'the pinned revision." or is suppressed as usual. Policy 2026-09-p1 releases only with at least 3 organizations, 5 runs, no ' +
             'organization above 50 % of the runs, and no prior release of the protocol whose member set differs by ' +
             'fewer than 3 organizations (differencing). Counts are bands; result sections are typed additively in ' +
             'the AnswerReceipt schema; result.own_evidence lists the caller’s own runs (their ids) even when the ' +
