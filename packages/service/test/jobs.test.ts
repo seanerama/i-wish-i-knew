@@ -97,8 +97,10 @@ test('reap_previews deletes expired previews and keeps unexpired ones', async ()
 test('a job that keeps throwing is retried with backoff and lands in failed with last_error after 5 attempts', async () => {
   const pool = t.app.iwik.pool;
   const attempts: number[] = [];
+  // A generous backoff so the "not yet runnable" check cannot race the clock;
+  // later attempts are brought forward with SQL instead of waiting.
   const runner = new JobRunner(pool, {
-    backoffMs: 5,
+    backoffMs: 30_000,
     handlers: {
       async boom(job) {
         attempts.push(job.attempts);
@@ -112,16 +114,21 @@ test('a job that keeps throwing is retried with backoff and lands in failed with
   assert.equal(job.state, 'queued', 'retry scheduled');
   assert.equal(job.attempts, 1);
   assert.equal(job.last_error, 'Error: boom on attempt 1');
-  assert.ok(job.run_after.getTime() > Date.now() - 1000);
+  assert.ok(job.run_after.getTime() > Date.now() + 20_000, 'run_after pushed back by the backoff');
   assert.equal(job.locked_by, null);
   assert.equal(await runner.drain(), 0, 'not runnable before its run_after');
 
-  const deadline = Date.now() + 5000;
-  while (job.state !== 'failed' && Date.now() < deadline) {
-    await runner.drain();
+  const delays: number[] = [];
+  for (let i = 0; i < 6 && job.state !== 'failed'; i++) {
+    const claimedAt = Date.now();
+    await pool.query(`UPDATE jobs SET run_after = now() WHERE job_id = $1`, [job_id]);
+    assert.equal(await runner.drain(), 1);
     job = await stateOf(job_id);
-    if (job.state !== 'failed') await sleep(5);
+    if (job.state === 'queued') delays.push(job.run_after.getTime() - claimedAt);
   }
+  // each retry waited longer than the previous one (30 s, 60 s, 120 s, 240 s minus test time)
+  assert.equal(delays.length, 3, 'three retries were scheduled after the first');
+  for (let i = 1; i < delays.length; i++) assert.ok(delays[i]! > delays[i - 1]!, delays.join(','));
   assert.equal(job.state, 'failed');
   assert.equal(job.attempts, 5);
   assert.equal(job.last_error, 'Error: boom on attempt 5');
@@ -168,9 +175,15 @@ test('two workers on one queue never run the same job (FOR UPDATE SKIP LOCKED)',
   }
   const a = new JobRunner(pool, { workerId: 'worker-a', handlers: handlerFor('a') });
   const b = new JobRunner(pool, { workerId: 'worker-b', handlers: handlerFor('b') });
-  const [ranA, ranB] = await Promise.all([a.drain(), b.drain()]);
-  assert.equal(ranA + ranB, 40);
-  assert.ok(ranA > 0 && ranB > 0, `both workers took jobs (${ranA}/${ranB})`);
+  await Promise.all([a.drain(), b.drain()]);
+  // count this test's jobs only (an earlier test may have left a retrying row)
+  const byWorker = { a: 0, b: 0 };
+  for (const id of ids) for (const w of ran.get(id) ?? []) byWorker[w as 'a' | 'b'] += 1;
+  assert.equal(byWorker.a + byWorker.b, 40);
+  assert.ok(
+    byWorker.a > 0 && byWorker.b > 0,
+    `both workers took jobs (${byWorker.a}/${byWorker.b})`,
+  );
   for (const id of ids) {
     assert.deepEqual((ran.get(id) ?? []).length, 1, `job ${id} ran exactly once`);
     const job = await stateOf(id);
