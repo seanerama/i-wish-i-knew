@@ -49,6 +49,7 @@ import { withTransaction } from '../../db.js';
 import { ApiError } from '../../errors.js';
 import type { ErrorDetail } from '../../errors.js';
 import { ulid } from '../../ulid.js';
+import { ensureClaimsForReceipt, stampClaimIds } from '../challenge/claims.js';
 import { contributorOf, orgRange, runRange } from '../cohort/index.js';
 import type { CohortFilters } from '../cohort/index.js';
 import type { Envelope } from '../crypto/index.js';
@@ -453,6 +454,15 @@ async function cooperativeAnswer(
         release = undefined;
       }
     }
+    // Stage 10 (additive): every released finding becomes a Claim row for
+    // this receipt (origin measured, corroboration unreplicated), and the
+    // finding carries its claim_id so a challenge can name it. The ids are
+    // minted per receipt: the cached outcome stays caller-free.
+    const stamped =
+      outcome.status === 'released' && outcome.sections !== undefined
+        ? stampClaimIds(outcome.sections)
+        : undefined;
+    const issued = stamped === undefined ? outcome : { ...outcome, sections: stamped.sections };
     const receipt = await insertReceipt(
       client,
       orgRef,
@@ -465,10 +475,26 @@ async function cooperativeAnswer(
         ...(outcome.suppression_reasons !== undefined
           ? { suppression_reasons: outcome.suppression_reasons }
           : {}),
-        ...resultSection(outcome, own),
+        ...resultSection(issued, own),
       },
       revision,
     );
+    if (stamped !== undefined) {
+      await ensureClaimsForReceipt(
+        client,
+        {
+          receipt_id: receipt.receipt_id,
+          org_ref: orgRef,
+          protocol_ref: protocol.ref,
+          calculation_version: CALCULATION_VERSION,
+          policy_version: POLICY_VERSION,
+          evidence_revision: revision,
+          cohort: { orgs: outcome.orgs, runs: outcome.runs },
+          result: stamped.sections,
+        },
+        stamped.ids,
+      );
+    }
     if (release !== undefined) {
       await recordRelease(client, {
         query_digest: digest,

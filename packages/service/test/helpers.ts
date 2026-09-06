@@ -690,8 +690,11 @@ const COUNT_KEYS = /^(n|runs|orgs|count|.*_count|.*_runs|.*_orgs)$/;
 /**
  * Brief demonstration 5: nothing private in a released receipt. No foreign
  * run_id / node_id / org_ref / name anywhere; own ids only under
- * own_evidence; every count key a band; no exact integer between 2 and 10
- * outside own_evidence (the revision and the tail-claim minimum excepted).
+ * own_evidence; every count key a band, and no exact integer between 2 and
+ * 10 under a count-named key outside own_evidence (the tail-claim minimum
+ * excepted). Only count-named keys are scanned for small integers (stage 9
+ * review carry-forward): a latency of 3 ms or a percentile value is not a
+ * count, and the id scans are unaffected.
  */
 export function assertReceiptPrivate(
   receipt: Record<string, unknown>,
@@ -711,26 +714,32 @@ export function assertReceiptPrivate(
   for (const s of expectations.own ?? []) {
     if (outsideText.includes(s)) throw new Error('own id appears outside own_evidence');
   }
-  const walk = (value: unknown, path: string): void => {
+  const walk = (value: unknown, path: string, countKey: boolean): void => {
     if (Array.isArray(value)) {
-      value.forEach((v, i) => walk(v, `${path}/${i}`));
+      value.forEach((v, i) => walk(v, `${path}/${i}`, countKey));
       return;
     }
     if (typeof value === 'object' && value !== null) {
       for (const [key, v] of Object.entries(value as Record<string, unknown>)) {
         const here = `${path}/${key}`;
         // `minimum_runs` is the policy constant (20), not a count of anything.
-        if (COUNT_KEYS.test(key) && key !== 'minimum_runs' && typeof v !== 'string') {
+        const counts = COUNT_KEYS.test(key) && key !== 'minimum_runs';
+        if (counts && typeof v !== 'string') {
           throw new Error(`count at ${here} is not a band`);
         }
-        walk(v, here);
+        walk(v, here, counts);
       }
       return;
     }
-    if (typeof value === 'number' && Number.isInteger(value) && value >= 2 && value <= 10) {
-      if (path === '/evidence_revision' || path.endsWith('/minimum_runs')) return;
+    if (
+      countKey &&
+      typeof value === 'number' &&
+      Number.isInteger(value) &&
+      value >= 2 &&
+      value <= 10
+    ) {
       throw new Error(`exact small count at ${path}`);
     }
   };
-  walk(outside, '');
+  walk(outside, '', false);
 }

@@ -1,0 +1,31 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title><%= it.product %> - operator sign-in</title>
+    <%~ include('_style') %>
+  </head>
+  <body>
+    <header>
+      <h1><%= it.product %></h1>
+      <p class="tagline">Operator sign-in for the challenge ledger.</p>
+    </header>
+
+    <section aria-labelledby="operator-login-heading">
+      <h2 id="operator-login-heading">Sign in as the operator</h2>
+      <% if (it.login_failed) { %>
+        <p class="error" id="login-error">That operator token was not recognized.</p>
+      <% } %>
+      <form method="post" action="/admin/login" autocomplete="off">
+        <input type="hidden" name="_csrf" value="<%= it.csrf %>" />
+        <label for="token">Operator token (<code>IWIK_OPERATOR_TOKEN</code>)</label>
+        <input id="token" name="token" type="password" required autocomplete="off" />
+        <button type="submit">Sign in</button>
+      </form>
+      <p class="muted">The token is checked against its stored hash and never kept; the session lasts one hour. Repeated failures are rate limited per address. An operator session holds no organization and sees no evidence.</p>
+    </section>
+
+    <footer><a href="/">Back to the console</a></footer>
+  </body>
+</html>
