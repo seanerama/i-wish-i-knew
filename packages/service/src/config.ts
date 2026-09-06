@@ -36,6 +36,20 @@ export interface Config {
   previewTtlMs: number;
   /** Secret for the console session cookie signature (derived from the KEK). */
   cookieSecret: string;
+  /** Stage 6: enrollment console, operator bootstrap. Default OFF everywhere. */
+  featureEnrollment: boolean;
+  /**
+   * SHA-256 of `IWIK_OPERATOR_TOKEN`; the presented token is hashed and
+   * compared in constant time. Undefined when no operator token is configured,
+   * in which case the admin endpoint answers 401 to everyone.
+   */
+  operatorTokenHash: Buffer | undefined;
+  /** Public origin used to build invite URLs (`IWIK_PUBLIC_URL`); path-only when unset. */
+  publicUrl: string | undefined;
+  /** 32-byte HMAC key for console session cookies, derived from the KEK (HKDF). */
+  sessionKey: Buffer;
+  /** Invite lifetime in milliseconds (`IWIK_INVITE_TTL_MS`, default 7 days). */
+  inviteTtlMs: number;
 }
 
 const here = dirname(fileURLToPath(import.meta.url));
@@ -133,6 +147,21 @@ function parseSeed(env: NodeJS.ProcessEnv): SeedIdentity | undefined {
   return { org, nodeToken, nodePubkey, nodeId: nodeId === '' ? undefined : nodeId };
 }
 
+function parseOperatorToken(raw: string | undefined): Buffer | undefined {
+  if (raw === undefined || raw === '') return undefined;
+  if (raw.length < 16) throw new ConfigError('IWIK_OPERATOR_TOKEN must be at least 16 characters');
+  return createHash('sha256').update(raw, 'utf8').digest();
+}
+
+function parsePublicUrl(raw: string | undefined): string | undefined {
+  if (raw === undefined || raw.trim() === '') return undefined;
+  const text = raw.trim().replace(/\/+$/, '');
+  if (!/^https?:\/\/[^\s/]+$/.test(text)) {
+    throw new ConfigError('IWIK_PUBLIC_URL must be an http(s) origin without a path');
+  }
+  return text;
+}
+
 function positiveInt(value: string | undefined, fallback: number, name: string): number {
   if (value === undefined || value === '') return fallback;
   const n = Number(value);
@@ -165,5 +194,16 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
     cookieSecret: createHash('sha256')
       .update(Buffer.concat([Buffer.from('iwik-cookie'), kek]))
       .digest('hex'),
+    featureEnrollment: flag(env['IWIK_FEATURE_ENROLLMENT'], false),
+    operatorTokenHash: parseOperatorToken(env['IWIK_OPERATOR_TOKEN']),
+    publicUrl: parsePublicUrl(env['IWIK_PUBLIC_URL']),
+    sessionKey: Buffer.from(
+      hkdfSync('sha256', kek, Buffer.from('iwik-session-salt'), 'iwik-session-v1', 32),
+    ),
+    inviteTtlMs: positiveInt(
+      env['IWIK_INVITE_TTL_MS'],
+      7 * 24 * 60 * 60 * 1000,
+      'IWIK_INVITE_TTL_MS',
+    ),
   };
 }

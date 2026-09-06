@@ -47,6 +47,11 @@ services:
       DATABASE_URL: postgres://iwik:iwik@db:5432/iwik
       IWIK_KEK: ${IWIK_KEK:?set IWIK_KEK to 64 hex characters (openssl rand -hex 32)}
       IWIK_FEATURE_INTAKE: ${IWIK_FEATURE_INTAKE:-off}
+      # Stage 6 enrollment (default off). Set IWIK_OPERATOR_TOKEN (16+ chars)
+      # to mint invites; IWIK_PUBLIC_URL makes invite URLs absolute.
+      IWIK_FEATURE_ENROLLMENT: ${IWIK_FEATURE_ENROLLMENT:-off}
+      IWIK_OPERATOR_TOKEN: ${IWIK_OPERATOR_TOKEN:-}
+      IWIK_PUBLIC_URL: ${IWIK_PUBLIC_URL:-}
       IWIK_SEED_ORG: ${IWIK_SEED_ORG:-}
       IWIK_SEED_NODE_TOKEN: ${IWIK_SEED_NODE_TOKEN:-}
       IWIK_SEED_NODE_PUBKEY: ${IWIK_SEED_NODE_PUBKEY:-}

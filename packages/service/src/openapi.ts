@@ -75,7 +75,14 @@ export function buildOpenApi(): Record<string, unknown> {
     },
     servers: [{ url: '/' }],
     components: {
-      securitySchemes: { nodeToken: { type: 'http', scheme: 'bearer' } },
+      securitySchemes: {
+        nodeToken: { type: 'http', scheme: 'bearer' },
+        operatorToken: {
+          type: 'http',
+          scheme: 'bearer',
+          description: 'IWIK_OPERATOR_TOKEN; authorizes POST /v1/admin/organizations only',
+        },
+      },
       schemas: {
         ErrorEnvelope: ERROR_ENVELOPE,
         Run: stripDialect(schemaDocument('Run')),
@@ -221,6 +228,38 @@ export function buildOpenApi(): Record<string, unknown> {
           responses: {
             '200': { description: '{ run, receipt_id, evidence_revision, received_at }' },
             ...errorResponses([401, 'unauthorized'], [403, 'scope_required'], [404, 'not_found']),
+          },
+        },
+      },
+      '/v1/admin/organizations': {
+        post: {
+          summary:
+            'Operator bootstrap (stage 6, additive): create an organization and its one-time enrollment invite',
+          description:
+            'Requires IWIK_FEATURE_ENROLLMENT=on (404 otherwise) and the operator token. ' +
+            'The invite URL is returned exactly once; only its hash is stored.',
+          security: [{ operatorToken: [] }],
+          'x-scope': 'operator',
+          requestBody: {
+            required: true,
+            content: {
+              'application/json': {
+                schema: {
+                  type: 'object',
+                  required: ['name'],
+                  properties: { name: { type: 'string', minLength: 1, maxLength: 120 } },
+                },
+              },
+            },
+          },
+          responses: {
+            '201': { description: '{ org_id, invite_url, expires_at }' },
+            ...errorResponses(
+              [401, 'unauthorized'],
+              [404, 'not_found (feature disabled)'],
+              [409, 'name_taken'],
+              [422, 'validation_failed'],
+            ),
           },
         },
       },

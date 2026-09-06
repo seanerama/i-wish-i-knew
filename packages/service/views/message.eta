@@ -1,0 +1,19 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title><%= it.product %> - <%= it.title %></title>
+    <%~ include('_style') %>
+  </head>
+  <body>
+    <header>
+      <h1><%= it.product %></h1>
+    </header>
+    <section>
+      <h2 id="message-title"><%= it.title %></h2>
+      <p id="message"><%= it.message %></p>
+    </section>
+    <footer><a href="/">Back to the console</a></footer>
+  </body>
+</html>

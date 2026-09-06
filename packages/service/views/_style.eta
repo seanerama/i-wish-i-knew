@@ -1,0 +1,31 @@
+<style>
+  body { font: 16px/1.5 system-ui, sans-serif; margin: 0; padding: 2rem; max-width: 56rem; color: #1a1a1a; background: #fafafa; }
+  h1 { margin: 0 0 0.25rem; font-size: 1.75rem; }
+  h2 { font-size: 1.25rem; margin-top: 2rem; }
+  h3 { font-size: 1rem; margin: 1rem 0 0.25rem; }
+  .tagline { color: #555; margin: 0 0 1.5rem; }
+  .trust { border-left: 4px solid #b45309; background: #fff7ed; padding: 0.75rem 1rem; margin: 0 0 1.5rem; }
+  .clause { border-left: 4px solid #6b7280; background: #f3f4f6; padding: 0.75rem 1rem; margin: 0.75rem 0; }
+  .notice { border-left: 4px solid #047857; background: #ecfdf5; padding: 0.75rem 1rem; margin: 0 0 1rem; }
+  .error { color: #b91c1c; }
+  .error-box { border-left: 4px solid #b91c1c; background: #fef2f2; padding: 0.75rem 1rem; margin: 0 0 1rem; }
+  .token { border: 2px solid #047857; background: #ecfdf5; padding: 1rem; margin: 1rem 0; }
+  .token code { display: block; font-size: 1.05rem; word-break: break-all; margin: 0.5rem 0; padding: 0.5rem; background: #fff; }
+  dl { display: grid; grid-template-columns: max-content 1fr; gap: 0.25rem 1rem; }
+  dt { font-weight: 600; }
+  dd { margin: 0; font-family: ui-monospace, monospace; }
+  form { margin-top: 0.75rem; }
+  form.inline { display: inline; margin: 0; }
+  label { display: block; margin-top: 0.5rem; }
+  input[type="text"], input[type="password"], textarea { width: 100%; box-sizing: border-box; padding: 0.4rem 0.6rem; font-family: ui-monospace, monospace; }
+  textarea { min-height: 5rem; }
+  button { padding: 0.4rem 0.9rem; margin-top: 0.5rem; }
+  button.danger { color: #b91c1c; }
+  table { border-collapse: collapse; width: 100%; margin-top: 0.5rem; }
+  th, td { text-align: left; padding: 0.35rem 0.5rem; border-bottom: 1px solid #e5e7eb; vertical-align: top; font-size: 0.9375rem; }
+  td.mono { font-family: ui-monospace, monospace; word-break: break-all; }
+  .muted { color: #666; }
+  .revoked { color: #991b1b; }
+  pre { background: #f3f4f6; padding: 0.75rem 1rem; overflow-x: auto; }
+  footer { margin-top: 2rem; color: #666; font-size: 0.875rem; }
+</style>

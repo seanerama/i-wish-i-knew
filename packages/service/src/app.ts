@@ -15,6 +15,8 @@ import { loggerOptions } from './logger.js';
 import { migrationsCurrent } from './migrate.js';
 import { registerConsoleRoutes, viewsDir } from './modules/console/index.js';
 import { Envelope } from './modules/crypto/index.js';
+import { registerEnrollmentRoutes } from './modules/enrollment/index.js';
+import { FailureWindow } from './modules/identity/ratelimit.js';
 import { registerIdentity, seedIdentity } from './modules/identity/index.js';
 import { registerIntakeRoutes } from './modules/intake/index.js';
 import { loadRegistry, registerRegistryRoutes } from './modules/registry/index.js';
@@ -28,6 +30,8 @@ export interface AppContext {
   envelope: Envelope;
   /** Every registered route, for the OpenAPI coverage test. */
   routes: Array<{ method: string; url: string }>;
+  /** Console login failure window (stage 6 rate limit); per process. */
+  loginFailures: FailureWindow;
 }
 
 declare module 'fastify' {
@@ -41,13 +45,14 @@ export async function buildApp(config: Config): Promise<FastifyInstance> {
   const registry = loadRegistry(config.packsDir);
   const envelope = new Envelope(pool, config.kek);
   const routes: AppContext['routes'] = [];
+  const loginFailures = new FailureWindow();
 
   const app = Fastify({
     logger: loggerOptions(config),
     bodyLimit: 2 * 1024 * 1024,
     trustProxy: false,
   });
-  app.decorate('iwik', { config, pool, registry, envelope, routes });
+  app.decorate('iwik', { config, pool, registry, envelope, routes, loginFailures });
   app.addHook('onRoute', (route) => {
     const methods = Array.isArray(route.method) ? route.method : [route.method];
     for (const method of methods) {
@@ -60,7 +65,7 @@ export async function buildApp(config: Config): Promise<FastifyInstance> {
   await app.register(fastifyCookie, { secret: config.cookieSecret });
   await app.register(fastifyFormbody);
   await app.register(fastifyView, {
-    engine: { eta: new Eta() },
+    engine: { eta: new Eta({ views: viewsDir }) },
     root: viewsDir,
     viewExt: 'eta',
     production: config.production,
@@ -70,7 +75,8 @@ export async function buildApp(config: Config): Promise<FastifyInstance> {
   registerHealth(app, pool, config);
   registerRegistryRoutes(app, registry);
   registerIntakeRoutes(app, { pool, envelope, registry, config });
-  registerConsoleRoutes(app, { pool, config, registry });
+  registerConsoleRoutes(app, { pool, config, registry, loginFailures });
+  registerEnrollmentRoutes(app, { pool, config });
 
   const openapi = buildOpenApi();
   app.get('/v1/openapi.json', async () => openapi);
@@ -87,6 +93,8 @@ export async function buildApp(config: Config): Promise<FastifyInstance> {
       {
         protocols: registry.size,
         intake: config.featureIntake ? 'enabled' : 'disabled',
+        enrollment: config.featureEnrollment ? 'enabled' : 'disabled',
+        operator_token: config.operatorTokenHash === undefined ? 'unset' : 'set',
         kek: config.kekSource,
       },
       'service ready',

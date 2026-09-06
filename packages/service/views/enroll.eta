@@ -1,0 +1,56 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title><%= it.product %> - enroll</title>
+    <%~ include('_style') %>
+  </head>
+  <body>
+    <header>
+      <h1><%= it.product %></h1>
+      <p class="tagline">Enroll your organization in the pilot cooperative.</p>
+    </header>
+
+    <% if (it.error) { %>
+      <div class="error-box" id="enroll-error">
+        <% if (it.error === 'name') { %>Display name must be 2 to 120 printable characters.<% } %>
+        <% if (it.error === 'name_taken') { %>That display name is already in use by another organization. Choose another.<% } %>
+        <% if (it.error === 'password') { %>Console password must be at least <%= it.password_min %> characters.<% } %>
+        <% if (it.error === 'password_match') { %>The two password fields do not match.<% } %>
+        <% if (it.error === 'agree') { %>Every clause must be accepted to enroll.<% } %>
+      </div>
+    <% } %>
+
+    <form method="post" autocomplete="off" id="enroll-form">
+      <input type="hidden" name="_csrf" value="<%= it.csrf %>" />
+
+      <h2>Organization</h2>
+      <label for="display_name">Display name (shown to the operator; also your console sign-in name)</label>
+      <input id="display_name" name="display_name" type="text" required minlength="2" maxlength="120" value="<%= it.display_name %>" />
+
+      <h2>Console password</h2>
+      <p class="muted">Pilot-only: the console uses a password you set here instead of email sign-in. Store it in your password manager; the operator cannot recover it, only re-invite you.</p>
+      <label for="password">Password (at least <%= it.password_min %> characters)</label>
+      <input id="password" name="password" type="password" required minlength="<%= it.password_min %>" autocomplete="new-password" />
+      <label for="password_confirm">Repeat password</label>
+      <input id="password_confirm" name="password_confirm" type="password" required minlength="<%= it.password_min %>" autocomplete="new-password" />
+
+      <h2>Pilot terms (version <span id="terms-version"><%= it.terms_version %></span>)</h2>
+      <p class="muted">Your agreement is recorded with this version and the time of acceptance.</p>
+
+      <div class="clause" id="clause-terms"><%= it.clauses.terms %></div>
+      <label><input type="checkbox" name="agree_terms" required /> I accept the pilot terms.</label>
+
+      <div class="clause trust" id="clause-trust-boundary"><%= it.clauses.trust_boundary %></div>
+      <label><input type="checkbox" name="agree_trust_boundary" required /> I acknowledge that service operators are inside the trust boundary during the pilot.</label>
+
+      <div class="clause" id="clause-reciprocity"><%= it.clauses.reciprocity %></div>
+      <label><input type="checkbox" name="agree_reciprocity" required /> I accept the reciprocity clause.</label>
+
+      <button type="submit">Enroll</button>
+    </form>
+
+    <footer>After enrolling you land on <code>/org</code> to register a node and issue a token.</footer>
+  </body>
+</html>

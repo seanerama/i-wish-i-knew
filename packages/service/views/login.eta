@@ -1,0 +1,33 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title><%= it.product %> - console sign-in</title>
+    <%~ include('_style') %>
+  </head>
+  <body>
+    <header>
+      <h1><%= it.product %></h1>
+      <p class="tagline">Console sign-in for an enrolled organization.</p>
+    </header>
+
+    <section aria-labelledby="login-heading">
+      <h2 id="login-heading">Sign in</h2>
+      <% if (it.login_failed) { %>
+        <p class="error" id="login-error">Organization or password not recognized.</p>
+      <% } %>
+      <form method="post" action="/console/login" autocomplete="off">
+        <input type="hidden" name="_csrf" value="<%= it.csrf %>" />
+        <label for="organization">Organization name (as set at enrollment)</label>
+        <input id="organization" name="organization" type="text" required maxlength="120" />
+        <label for="password">Console password</label>
+        <input id="password" name="password" type="password" required autocomplete="current-password" />
+        <button type="submit">Sign in</button>
+      </form>
+      <p class="muted">Repeated failures are rate limited per organization and address. Lost password: ask the operator for a new enrollment invite.</p>
+    </section>
+
+    <footer><a href="/">Back to the console</a></footer>
+  </body>
+</html>

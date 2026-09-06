@@ -1,0 +1,137 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title><%= it.product %> - <%= it.org_name %></title>
+    <%~ include('_style') %>
+  </head>
+  <body>
+    <header>
+      <h1><%= it.product %></h1>
+      <p class="tagline">Nodes and tokens for <strong id="org-name"><%= it.org_name %></strong>.</p>
+    </header>
+
+    <% if (it.notice) { %>
+      <p class="notice" id="notice">
+        <% if (it.notice === 'enrolled') { %>Enrollment complete. Register your first node below.<% } %>
+        <% if (it.notice === 'node_registered') { %>Node registered. Issue it a token below.<% } %>
+        <% if (it.notice === 'node_revoked') { %>Node revoked. Every token issued to it now answers 401.<% } %>
+        <% if (it.notice === 'token_revoked') { %>Token revoked.<% } %>
+        <% if (it.notice === 'nothing_to_revoke') { %>Nothing to revoke: not yours, or already revoked.<% } %>
+      </p>
+    <% } %>
+    <% if (it.error) { %>
+      <p class="error-box" id="error">
+        <% if (it.error === 'pubkey') { %>That public key could not be parsed. Paste exactly what <code>iwik init</code> printed: a base64 32-byte Ed25519 key or a PEM SPKI block.<% } %>
+        <% if (it.error === 'pubkey_exists') { %>An active node with that public key is already registered.<% } %>
+        <% if (it.error === 'scopes') { %>Choose at least one scope.<% } %>
+        <% if (it.error === 'node_unknown') { %>That node is not one of yours.<% } %>
+        <% if (it.error === 'node_revoked') { %>That node is revoked; tokens cannot be issued to it.<% } %>
+      </p>
+    <% } %>
+
+    <% if (it.issued) { %>
+      <section class="token" id="issued-token" aria-labelledby="issued-heading">
+        <h2 id="issued-heading">New token for node <code><%= it.issued.node_id %></code></h2>
+        <p><strong>Copy it now.</strong> It is shown exactly once; the service keeps only a hash. Scopes: <span id="issued-scopes"><%= it.issued.scopes.join(', ') %></span>. Id: <code id="issued-token-id"><%= it.issued.token_id %></code>.</p>
+        <code id="issued-token-value"><%= it.issued.token %></code>
+        <p>On the node, save it with owner-only permissions and point the runner at it:</p>
+        <pre>umask 077 && printf '%s' '&lt;token&gt;' &gt; ~/.iwik/token</pre>
+        <p class="muted">Reloading this page will not show the token again.</p>
+      </section>
+    <% } %>
+
+    <section aria-labelledby="howto-heading">
+      <h2 id="howto-heading">Enroll a node</h2>
+      <ol id="enroll-instructions">
+        <li>On the machine that will run tests, install the runner and initialize it against this service:
+          <pre>npx i-wish-i-knew init --service <%= it.service_url %>
+# or, with the runner installed globally:
+iwik init --service <%= it.service_url %></pre>
+          <code>iwik init</code> creates <code>~/.iwik/</code>, generates the node's Ed25519 signing key (<code>key.ed25519</code>, mode 0600), and prints the node's <strong>public key</strong>.</li>
+        <li>Paste that public key below and register the node. Accepted formats (both are what <code>iwik init</code> may print):
+          <ul>
+            <li><strong>base64 raw key</strong>: one line of 44 characters, the 32 raw bytes of the Ed25519 public key (no PEM header lines), or</li>
+            <li><strong>PEM SPKI block</strong>: <code>-----BEGIN PUBLIC KEY-----</code> ... <code>-----END PUBLIC KEY-----</code>.</li>
+          </ul>
+          Either form is stored canonically as the base64 raw key.</li>
+        <li>Issue the node a token with only the scopes it needs (<code>query</code> reads, <code>submit</code> previews and submits runs, <code>publish</code> challenges, outcomes, withdrawals). Save the token to <code>~/.iwik/token</code> (0600).</li>
+        <li>Lost or leaked? Revoke the token, or revoke the whole node: every request with a revoked token answers <code>401</code>, and intake rejects signatures from a revoked node.</li>
+      </ol>
+    </section>
+
+    <section aria-labelledby="register-heading">
+      <h2 id="register-heading">Register a node</h2>
+      <form method="post" action="/org/nodes" id="register-node">
+        <input type="hidden" name="_csrf" value="<%= it.csrf %>" />
+        <label for="pubkey">Public key printed by <code>iwik init</code> (base64 raw 32 bytes, or PEM)</label>
+        <textarea id="pubkey" name="pubkey" required spellcheck="false"></textarea>
+        <button type="submit">Register node</button>
+      </form>
+    </section>
+
+    <section aria-labelledby="nodes-heading">
+      <h2 id="nodes-heading">Nodes</h2>
+      <% if (it.nodes.length === 0) { %>
+        <p class="muted" id="no-nodes">No nodes registered yet.</p>
+      <% } %>
+      <% it.nodes.forEach(function (node) { %>
+        <article class="node" id="node-<%= node.node_id %>">
+          <h3>Node <code><%= node.node_id %></code>
+            <% if (node.revoked_at) { %><span class="revoked">(revoked <%= node.revoked_at %>)</span><% } %>
+          </h3>
+          <dl>
+            <dt>Public key</dt><dd><%= node.pubkey %></dd>
+            <dt>Registered</dt><dd><%= node.created_at %></dd>
+          </dl>
+          <% if (!node.revoked_at) { %>
+            <form method="post" action="/org/nodes/<%= node.node_id %>/tokens" class="issue-token">
+              <input type="hidden" name="_csrf" value="<%= it.csrf %>" />
+              <span>Issue a token with scopes:</span>
+              <% it.scopes.forEach(function (scope) { %>
+                <label style="display:inline; margin-right: 0.75rem;"><input type="checkbox" name="scope_<%= scope %>" /> <%= scope %></label>
+              <% }) %>
+              <button type="submit">Issue token</button>
+            </form>
+            <form method="post" action="/org/nodes/<%= node.node_id %>/revoke" class="inline revoke-node">
+              <input type="hidden" name="_csrf" value="<%= it.csrf %>" />
+              <button type="submit" class="danger">Revoke node</button>
+            </form>
+          <% } %>
+          <table>
+            <thead><tr><th>Token id</th><th>Scopes</th><th>Issued</th><th>Status</th><th></th></tr></thead>
+            <tbody>
+              <% if (node.tokens.length === 0) { %>
+                <tr><td colspan="5" class="muted">No tokens.</td></tr>
+              <% } %>
+              <% node.tokens.forEach(function (token) { %>
+                <tr id="token-<%= token.token_id %>">
+                  <td class="mono"><%= token.token_id %></td>
+                  <td><%= token.scopes.join(', ') %></td>
+                  <td><%= token.created_at %></td>
+                  <td><% if (token.revoked_at) { %><span class="revoked">revoked <%= token.revoked_at %></span><% } else if (node.revoked_at) { %><span class="revoked">node revoked</span><% } else { %>active<% } %></td>
+                  <td>
+                    <% if (!token.revoked_at && !node.revoked_at) { %>
+                      <form method="post" action="/org/tokens/<%= token.token_id %>/revoke" class="inline revoke-token">
+                        <input type="hidden" name="_csrf" value="<%= it.csrf %>" />
+                        <button type="submit" class="danger">Revoke</button>
+                      </form>
+                    <% } %>
+                  </td>
+                </tr>
+              <% }) %>
+            </tbody>
+          </table>
+        </article>
+      <% }) %>
+    </section>
+
+    <form method="post" action="/console/logout">
+      <input type="hidden" name="_csrf" value="<%= it.csrf %>" />
+      <button type="submit">Sign out</button>
+    </form>
+
+    <footer><a href="/">Console home</a>. Member API: <code>/v1/openapi.json</code>.</footer>
+  </body>
+</html>

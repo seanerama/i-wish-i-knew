@@ -4,20 +4,7 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title><%= it.product %></title>
-    <style>
-      body { font: 16px/1.5 system-ui, sans-serif; margin: 0; padding: 2rem; max-width: 52rem; color: #1a1a1a; background: #fafafa; }
-      h1 { margin: 0 0 0.25rem; font-size: 1.75rem; }
-      .tagline { color: #555; margin: 0 0 1.5rem; }
-      .trust { border-left: 4px solid #b45309; background: #fff7ed; padding: 0.75rem 1rem; margin: 0 0 1.5rem; }
-      dl { display: grid; grid-template-columns: max-content 1fr; gap: 0.25rem 1rem; }
-      dt { font-weight: 600; }
-      dd { margin: 0; font-family: ui-monospace, monospace; }
-      form { margin-top: 1rem; display: flex; gap: 0.5rem; flex-wrap: wrap; }
-      input[type="password"] { flex: 1; min-width: 16rem; padding: 0.4rem 0.6rem; }
-      button { padding: 0.4rem 0.9rem; }
-      .error { color: #b91c1c; }
-      footer { margin-top: 2rem; color: #666; font-size: 0.875rem; }
-    </style>
+    <%~ include('_style') %>
   </head>
   <body>
     <header>
@@ -34,6 +21,8 @@
         <dd id="evidence-revision"><%= it.evidence_revision %></dd>
         <dt>Intake</dt>
         <dd id="intake-state"><%= it.intake_enabled ? 'enabled' : 'disabled (IWIK_FEATURE_INTAKE=off)' %></dd>
+        <dt>Enrollment</dt>
+        <dd id="enrollment-state"><%= it.enrollment_enabled ? 'enabled' : 'disabled (IWIK_FEATURE_ENROLLMENT=off)' %></dd>
         <dt>Accepted protocols</dt>
         <dd id="protocols"><%= it.protocols.length === 0 ? '(none)' : it.protocols.join(', ') %></dd>
       </dl>
@@ -45,14 +34,20 @@
         <dl>
           <dt>Organization</dt>
           <dd id="org-name"><%= it.session.org_name %></dd>
-          <dt>Node</dt>
-          <dd id="node-id"><%= it.session.node_id %></dd>
+          <% if (it.session.node_id !== null) { %>
+            <dt>Node</dt>
+            <dd id="node-id"><%= it.session.node_id %></dd>
+          <% } %>
           <dt>Accepted runs</dt>
           <dd id="accepted-runs"><%= it.session.accepted_runs %></dd>
           <dt>Last receipt</dt>
           <dd id="last-receipt-id"><%= it.session.last_receipt_id === null ? '(none yet)' : it.session.last_receipt_id %></dd>
         </dl>
+        <% if (it.session.kind === 'org') { %>
+          <p><a id="org-link" href="/org">Manage nodes and tokens</a></p>
+        <% } %>
         <form method="post" action="/console/logout">
+          <input type="hidden" name="_csrf" value="<%= it.csrf %>" />
           <button type="submit">Sign out</button>
         </form>
       <% } else { %>
@@ -61,10 +56,14 @@
           <p class="error" id="login-error">That token was not recognized.</p>
         <% } %>
         <form method="post" action="/console/session">
+          <input type="hidden" name="_csrf" value="<%= it.csrf %>" />
           <label for="token">Node token</label>
           <input id="token" name="token" type="password" autocomplete="off" required />
           <button type="submit">Sign in</button>
         </form>
+        <% if (it.enrollment_enabled) { %>
+          <p>Enrolled organization? <a id="console-login-link" href="/console/login">Sign in with your console password</a> to manage nodes and tokens.</p>
+        <% } %>
       <% } %>
     </section>
 

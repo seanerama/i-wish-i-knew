@@ -15,7 +15,7 @@ import type { ErrorDetail } from '../../errors.js';
 import { ulid } from '../../ulid.js';
 import type { Envelope } from '../crypto/index.js';
 import type { AuthContext } from '../identity/index.js';
-import { parsePublicKey, requireScope } from '../identity/index.js';
+import { nodeIsRevoked, parsePublicKey, requireScope } from '../identity/index.js';
 import type { Registry } from '../registry/index.js';
 import { sanitizeValue } from './sanitize.js';
 import type { SanitizationReport } from './sanitize.js';
@@ -193,6 +193,9 @@ async function storeRun(
     // Serialize submitters of the same run_id on the revision row; the
     // singleton lock also orders the revision increments.
     await client.query(`SELECT revision FROM evidence.revision WHERE singleton FOR UPDATE`);
+    // A node revoked after the auth hook ran (or between preview and submit)
+    // never gets a signature accepted: checked inside the storing transaction.
+    if (await nodeIsRevoked(client, auth.node_id)) throw new ApiError(401, 'node_revoked');
     const existing = await client.query<{
       org_ref: string;
       content_digest: string;
