@@ -48,3 +48,19 @@ the TypeScript types that consume them.
   which is the point.
 - Non-TypeScript implementers get plain JSON Schema files and a fixtures
   directory to conform against.
+
+## Amendment 2026-09-06 (from the stage 1 review)
+
+- Envelope objects are generated with `additionalProperties: false`. "Additive"
+  evolution therefore means **consumers upgrade before producers emit a new
+  optional field**; a producer that emits a field older validators do not know
+  is rejected, by design (smuggling defence).
+- Two semantic rules live in code, not schema, and are part of the conformance
+  vocabulary: `accounting_reconciles` (sums of `Run.accounting` must reconcile
+  with `planned`) and `required_context_missing` (intake checks `Run.context`
+  keys against `ProtocolVersion.required_context`). Validation errors are
+  `{ path, rule }` pairs and never carry values.
+- `protocol_digest` is SHA-256 over the JCS form of `protocol.json` with the
+  `protocol_digest` member removed; tree digests hash `<path>\t<sha256>\n`
+  lines over the sorted file list. The reference implementation is shared code
+  in `packages/contracts`.
