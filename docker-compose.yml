@@ -1,7 +1,12 @@
 # Local development and the "clean machine" check (stage 2 acceptance):
 #
-#   IWIK_KEK=$(openssl rand -hex 32) docker compose up --build
+#   IWIK_KEK=$(openssl rand -hex 32) docker compose up --build --wait
 #   curl -s localhost:3000/readyz     # {"ok":true}
+#
+# Only `app` builds the image (i-wish-i-knew:local); `migrate` runs the same
+# image (pull_policy: never, so compose never looks for it in a registry).
+# Two services building into one tag raced on the containerd image store
+# ("already exists"; stage 2 review carry-forward).
 #
 # Only the database is needed for `npm test`:
 #
@@ -29,8 +34,8 @@ services:
       - iwik-db:/var/lib/postgresql/data
 
   migrate:
-    build: .
     image: i-wish-i-knew:local
+    pull_policy: never
     command: ['node', 'packages/service/dist/migrate.js']
     environment:
       DATABASE_URL: postgres://iwik:iwik@db:5432/iwik

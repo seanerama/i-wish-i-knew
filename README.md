@@ -52,8 +52,10 @@ Service configuration is environment-only: `DATABASE_URL`, `IWIK_KEK`, `PORT`,
 Ed25519 public key), `IWIK_SEED_NODE_ID`. Extra secret patterns for intake:
 `IWIK_SECRET_PATTERNS` (JSON array of regex sources).
 
-The whole stack on a clean machine: `IWIK_KEK=$(openssl rand -hex 32) docker compose up --build`,
-then `curl localhost:3000/readyz`. Gates (`.verity/gates.json`): `node .verity/run-gates.cjs`.
+The whole stack on a clean machine: `IWIK_KEK=$(openssl rand -hex 32) docker compose up --build --wait`,
+then `curl localhost:3000/readyz` (`{"ok":true}`); `docker compose down -v` tears it down.
+Only the `app` service builds the image; `migrate` runs the same `i-wish-i-knew:local`
+image before `app` starts. Gates (`.verity/gates.json`): `node .verity/run-gates.cjs`.
 
 The runner (`packages/runner/README.md`, smoke check in `smoke/runner.md`):
 
@@ -111,3 +113,17 @@ Sessions are an HMAC-signed cookie (key derived from the KEK), `HttpOnly`,
 `SameSite=Lax`; forms carry a CSRF token. The stage-2 node-token sign-in on
 `/` still works (it uses the same cookie, holding only the token hash) and is
 the only sign-in while the flag is off. UI smoke: `smoke/enrollment.md`.
+
+## Release and deploy
+
+- `.github/workflows/release.yml` — on a `v*` tag, builds the Dockerfile for
+  `linux/amd64` + `linux/arm64` and pushes `ghcr.io/seanerama/i-wish-i-knew:<tag>`
+  and `:sha-<short>`; no deploy step. CI's `release-dry-run` job proves the
+  multi-arch build on pull requests that touch the image or `deploy/`.
+- `deploy/` — the staging systemd unit, the env variable names
+  (`deploy/staging/env.example`), and the runbooks the Release/Deploy Operator
+  follows: [`deploy/staging/README.md`](deploy/staging/README.md),
+  [`deploy/production/README.md`](deploy/production/README.md). Host and
+  credential details live outside the repo (`.verity/deploy-access.README.md`).
+- `npm test` also runs `deploy/test/unit-file.test.sh` (`systemd-analyze verify`
+  on the unit; a visible SKIP where systemd is absent).
