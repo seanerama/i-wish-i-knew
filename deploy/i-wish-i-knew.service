@@ -1,0 +1,66 @@
+# I Wish I Knew — staging host unit (stage 4, ADR-0004).
+#
+# Runs the release image from ghcr as a foreground `docker run`, so systemd
+# owns the lifecycle: `systemctl restart` swaps the tag, `Restart=on-failure`
+# recovers crashes, and the container's stdout/stderr land in the journal
+# (`journalctl -u i-wish-i-knew -f`; the Docker log driver is `none` so each
+# line is stored once).
+#
+# Install (see deploy/staging/README.md for the full runbook):
+#   sudo install -m 0644 deploy/i-wish-i-knew.service /etc/systemd/system/
+#   sudo install -d -m 0750 /etc/i-wish-i-knew
+#   sudo install -m 0640 deploy/staging/env.example /etc/i-wish-i-knew/env   # then fill it in
+#   sudo systemctl daemon-reload && sudo systemctl enable --now i-wish-i-knew
+#
+# Every value comes from /etc/i-wish-i-knew/env (names in deploy/staging/env.example;
+# no secret is ever written into this unit). The same file is handed to the
+# container with --env-file, so KEY=VALUE lines only: no quotes, no `export`.
+#
+# Networking: `--network host`. The service binds HOST:PORT from the env file
+# (HOST = the host's tailnet address, or 127.0.0.1 behind a local proxy) and
+# reaches the per-app PostgreSQL on 127.0.0.1 with no pg_hba changes. That is
+# the right trade for a single-tenant staging host inside the pilot trust
+# boundary (ADR-0002); revisit before the host is shared with untrusted work.
+
+[Unit]
+Description=I Wish I Knew cooperative service (ghcr.io/seanerama/i-wish-i-knew)
+Documentation=https://github.com/seanerama/i-wish-i-knew/blob/main/deploy/staging/README.md
+After=docker.service network-online.target
+Requires=docker.service
+Wants=network-online.target
+StartLimitIntervalSec=300
+StartLimitBurst=5
+
+[Service]
+Type=simple
+EnvironmentFile=/etc/i-wish-i-knew/env
+Restart=on-failure
+RestartSec=5s
+TimeoutStartSec=180s
+TimeoutStopSec=30s
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=i-wish-i-knew
+
+# Fresh container every start; the pull is best-effort so a restart still
+# works when ghcr is unreachable (release tags are never moved).
+ExecStartPre=-/usr/bin/docker rm -f i-wish-i-knew
+ExecStartPre=-/usr/bin/docker pull ghcr.io/seanerama/i-wish-i-knew:${IWIK_IMAGE_TAG}
+ExecStart=/usr/bin/docker run --rm --name i-wish-i-knew \
+    --network host \
+    --env-file /etc/i-wish-i-knew/env \
+    --log-driver none \
+    --init \
+    --read-only --tmpfs /tmp \
+    --health-cmd "wget -qO- http://${HOST}:${PORT}/readyz || exit 1" \
+    --health-interval 30s --health-timeout 5s --health-retries 3 \
+    ghcr.io/seanerama/i-wish-i-knew:${IWIK_IMAGE_TAG} \
+    node packages/service/dist/server.js
+# Readiness gate: the start only counts once /readyz (database reachable AND
+# migrations current) answers 200; otherwise the unit fails and Restart= retries.
+# `$$` is systemd's escape for a literal `$`, so the shell expands HOST/PORT.
+ExecStartPost=/bin/sh -c 'i=0; until /usr/bin/docker exec i-wish-i-knew wget -qO- "http://$$HOST:$$PORT/readyz" >/dev/null 2>&1; do i=$$((i+1)); if [ "$$i" -ge 45 ]; then echo "readyz not ok after 90s" >&2; exit 1; fi; sleep 2; done; echo "readyz ok"'
+ExecStop=/usr/bin/docker stop -t 20 i-wish-i-knew
+
+[Install]
+WantedBy=multi-user.target
