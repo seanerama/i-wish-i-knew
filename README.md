@@ -53,3 +53,47 @@ Ed25519 public key), `IWIK_SEED_NODE_ID`. Extra secret patterns for intake:
 
 The whole stack on a clean machine: `IWIK_KEK=$(openssl rand -hex 32) docker compose up --build`,
 then `curl localhost:3000/readyz`. Gates (`.verity/gates.json`): `node .verity/run-gates.cjs`.
+
+## Enrollment (pilot)
+
+Stage 6 replaces the env-seeded identity with real enrollment, behind the
+kill switch `IWIK_FEATURE_ENROLLMENT` (default **off** in every environment;
+when off, `/enroll/*`, `/org*`, `/console/login`, and `POST /v1/admin/organizations`
+answer `404` and the seeded node keeps working unchanged).
+
+1. **Operator bootstrap.** Set `IWIK_OPERATOR_TOKEN` (16+ characters; compared
+   as a SHA-256 in constant time; it authorizes exactly one endpoint) and
+   `IWIK_FEATURE_ENROLLMENT=on`. Optionally `IWIK_PUBLIC_URL=https://host` so
+   invite URLs are absolute. Then:
+
+   ```sh
+   curl -s -X POST localhost:3000/v1/admin/organizations \
+     -H "Authorization: Bearer $IWIK_OPERATOR_TOKEN" -H 'content-type: application/json' \
+     -d '{"name":"Acme"}'
+   # -> 201 { "org_id": "...", "invite_url": "/enroll/<one-time invite>", "expires_at": "..." }
+   ```
+
+   The invite URL is returned once; only its hash is stored (7-day default
+   lifetime, `IWIK_INVITE_TTL_MS`).
+2. **Enroll** at the invite URL: set the display name, a console password
+   (12+ characters, stored as an scrypt hash), and accept the pilot terms,
+   the ADR-0002 trust-boundary statement, and the R11 reciprocity clause. The
+   agreement is recorded with the terms version and timestamp
+   (`identity.agreements`).
+3. **`/org`**: register a node by pasting the public key `iwik init` prints
+   (base64 raw 32-byte Ed25519 key, or a PEM SPKI block; stored canonically
+   as base64), issue tokens with chosen scopes (`query`, `submit`,
+   `publish`; shown exactly once, stored as SHA-256 only), revoke tokens
+   (`401 unauthorized`) or whole nodes (`401 node_revoked`, and intake refuses
+   the node's signatures). Every enroll/register/issue/revoke writes an
+   `identity.audit` row of identifiers only.
+4. **Console sign-in** (`/console/login`) is organization name + console
+   password. Pilot-only shortcut: an operator-set password instead of email
+   magic links (`feature-assessments/initial-backlog-assessment.md`). Failed
+   attempts are rate limited per organization + client address, in process
+   memory: the 6th failure inside a minute answers `429` with `Retry-After`.
+
+Sessions are an HMAC-signed cookie (key derived from the KEK), `HttpOnly`,
+`SameSite=Lax`; forms carry a CSRF token. The stage-2 node-token sign-in on
+`/` still works (it uses the same cookie, holding only the token hash) and is
+the only sign-in while the flag is off. UI smoke: `smoke/enrollment.md`.
