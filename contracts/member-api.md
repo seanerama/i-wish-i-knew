@@ -91,6 +91,16 @@ the endpoint table above and do not change any listed semantics.
   `required_context_missing` uses the pseudo-pointer `/context/<key>` naming the
   registry key, because context is an array.
 
+## Operator endpoints (additive, recorded 2026-09-06 from the stage 6 implementation)
+
+| Method and path | Scope | Purpose |
+|---|---|---|
+| `POST /v1/admin/organizations` | operator (`IWIK_OPERATOR_TOKEN`, not a node token) | create an organization and its one-time enrollment invite; returns the invite URL once; `409` if the display name exists |
+
+Operator scope is distinct from node scopes and never grants evidence access.
+Console routes (`/enroll/<invite>`, `/org`, `/console/login`) are server-rendered
+member surfaces behind `IWIK_FEATURE_ENROLLMENT` and are not part of the JSON API.
+
 ## Versioning
 
 Frozen at **v1**. Changes are **additive only** — a breaking change is a NEW
