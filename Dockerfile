@@ -32,11 +32,22 @@ ENV NODE_ENV=production
 WORKDIR /app
 COPY package.json package-lock.json .npmrc ./
 COPY packages/contracts/package.json packages/contracts/package.json
-# The runner (`iwik`) is a member-side package and is not shipped in this
-# image; its package.json is present only so the workspace lockfile resolves.
-COPY packages/runner/package.json packages/runner/package.json
 COPY packages/service/package.json packages/service/package.json
-RUN npm ci --omit=dev && npm cache clean --force
+# The runner (`iwik`) is a member-side package and is not shipped in this
+# image (stage 3 review). It is removed from the workspace list before the
+# install, so npm prunes the runner link and its own dependencies (commander)
+# from the tree. Every remaining version still comes from package-lock.json;
+# `npm install` is used because `npm ci` refuses a manifest that differs from
+# the lockfile's workspace list, and the build stage's `npm ci` above has
+# already failed the build if the committed lockfile were out of sync. The
+# last line fails the build loudly if runner code ever leaks back in.
+RUN node -e "const fs = require('fs'); const p = JSON.parse(fs.readFileSync('package.json', 'utf8')); p.workspaces = p.workspaces.filter((w) => w !== 'packages/runner'); fs.writeFileSync('package.json', JSON.stringify(p, null, 2) + '\n');" \
+    && npm install --omit=dev --no-audit --no-fund \
+    && npm cache clean --force \
+    && test ! -e node_modules/commander \
+    && test ! -e node_modules/@iwik/runner \
+    && test ! -e node_modules/i-wish-i-knew \
+    && test -e node_modules/@iwik/contracts
 COPY --from=build /app/packages/contracts/dist packages/contracts/dist
 COPY --from=build /app/packages/service/dist packages/service/dist
 COPY packages/service/migrations packages/service/migrations
