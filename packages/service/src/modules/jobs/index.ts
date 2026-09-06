@@ -243,7 +243,9 @@ export class JobRunner {
       this.log.info({ ...base, ...(summary ?? {}) }, 'job done');
     } catch (err) {
       const outcome = await this.settleFailure(job, err);
-      const detail = { ...base, err: errorText(err) };
+      // `reason`, not `err`: pino's err serializer expects an Error and
+      // renders a string as an empty stack (stage 7 review carry-forward).
+      const detail = { ...base, reason: errorText(err) };
       if (outcome === 'failed') this.log.error(detail, 'job failed');
       else this.log.warn(detail, 'job retry scheduled');
     }

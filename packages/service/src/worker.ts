@@ -2,7 +2,7 @@
 //
 // The job loop (modules/jobs): every IWIK_WORKER_INTERVAL_MS it re-queues
 // stale `running` rows, schedules the maintenance kinds (reap_previews per
-// hour bucket; sharing_backfill while rows need it), and drains whatever is
+// hour bucket; sharing_backfill and index_backfill while rows need them), and drains whatever is
 // runnable, one claim at a time with FOR UPDATE SKIP LOCKED so several
 // workers share one queue safely. `--once` does a single pass and exits 0
 // (tests, cron). SIGTERM/SIGINT finish the job in flight, then exit 0.
@@ -13,6 +13,7 @@ import { loggerOptions } from './logger.js';
 import { Envelope } from './modules/crypto/index.js';
 import { buildHandlers, ensureMaintenanceJobs } from './modules/jobs/handlers.js';
 import { JobRunner, countQueued } from './modules/jobs/index.js';
+import { loadRegistry } from './modules/registry/index.js';
 
 function sleep(ms: number, signal: AbortSignal): Promise<void> {
   return new Promise((resolve) => {
@@ -33,7 +34,12 @@ async function main(): Promise<void> {
   const log = pino({ ...loggerOptions(config), base: { service: 'iwik-worker' } });
   const pool = createPool(config.databaseUrl);
   const envelope = new Envelope(pool, config.kek);
-  const runner = new JobRunner(pool, { handlers: buildHandlers({ envelope }), log });
+  // The registry says which context keys index_backfill may project.
+  const registry = loadRegistry(config.packsDir);
+  const runner = new JobRunner(pool, {
+    handlers: buildHandlers({ envelope, registry, config }),
+    log,
+  });
   const stop = new AbortController();
   const onSignal = (signal: string): void => {
     log.info({ signal }, 'worker stopping');

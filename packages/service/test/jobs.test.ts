@@ -23,7 +23,7 @@ import {
 } from '../src/modules/jobs/index.js';
 import type { JobRow } from '../src/modules/jobs/index.js';
 import { ulid } from '../src/ulid.js';
-import { bootApp, prepareRun, submitRun } from './helpers.js';
+import { bootApp, handlerDeps, prepareRun, submitRun } from './helpers.js';
 import type { TestApp } from './helpers.js';
 
 let t: TestApp;
@@ -76,7 +76,7 @@ test('reap_previews deletes expired previews and keeps unexpired ones', async ()
   const again = await ensureMaintenanceJobs(pool);
   assert.equal(again.reap, false, 'one reap per hour bucket');
   const runner = new JobRunner(pool, {
-    handlers: buildHandlers({ envelope: t.app.iwik.envelope }),
+    handlers: buildHandlers(handlerDeps(t)),
   });
   assert.equal(await runner.drain(), 1);
   const left = await pool.query<{ content_digest: string }>(
@@ -259,7 +259,7 @@ test('sharing_backfill fills sharing_policy from the decrypted body for rows tha
   const scheduled = await ensureMaintenanceJobs(pool);
   assert.equal(scheduled.backfill, true);
   const runner = new JobRunner(pool, {
-    handlers: buildHandlers({ envelope: t.app.iwik.envelope }),
+    handlers: buildHandlers(handlerDeps(t)),
   });
   await runner.drain();
   const filled = await columns();

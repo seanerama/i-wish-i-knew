@@ -14,6 +14,7 @@ import { registerHealth } from './health.js';
 import { loggerOptions } from './logger.js';
 import { migrationsCurrent } from './migrate.js';
 import { registerAggregateRoutes } from './modules/aggregate/index.js';
+import { registerCohortRoutes } from './modules/cohort/index.js';
 import { registerConsoleRoutes, viewsDir } from './modules/console/index.js';
 import { Envelope } from './modules/crypto/index.js';
 import { registerEnrollmentRoutes } from './modules/enrollment/index.js';
@@ -100,6 +101,7 @@ export async function buildApp(config: Config): Promise<FastifyInstance> {
   registerConsoleRoutes(app, { pool, config, registry, loginFailures, loginIpFailures });
   registerEnrollmentRoutes(app, { pool, config });
   registerWithdrawalRoutes(app, { pool, config });
+  registerCohortRoutes(app, { pool, config, registry });
 
   const openapi = buildOpenApi();
   app.get('/v1/openapi.json', async () => openapi);
@@ -118,6 +120,7 @@ export async function buildApp(config: Config): Promise<FastifyInstance> {
         intake: config.featureIntake ? 'enabled' : 'disabled',
         enrollment: config.featureEnrollment ? 'enabled' : 'disabled',
         withdrawal: config.featureWithdrawal ? 'enabled' : 'disabled',
+        dedupe: config.featureDedupe ? 'enabled' : 'disabled',
         operator_token: config.operatorTokenHash === undefined ? 'unset' : 'set',
         kek: config.kekSource,
       },

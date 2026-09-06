@@ -14,8 +14,11 @@ import type { Run } from '@iwik/contracts';
 import { buildApp } from '../src/app.js';
 import { loadConfig } from '../src/config.js';
 import { migrateUp } from '../src/migrate.js';
+import { createNode, createOrganization, issueToken } from '../src/modules/identity/index.js';
 import type { Scope } from '../src/modules/identity/index.js';
 import { signingPayload } from '../src/modules/intake/index.js';
+import type { HandlerDeps } from '../src/modules/jobs/handlers.js';
+import { ulid } from '../src/ulid.js';
 
 const here = dirname(fileURLToPath(import.meta.url));
 export const repoRoot = resolve(here, '..', '..', '..');
@@ -107,6 +110,106 @@ export async function bootApp(options: BootOptions = {}): Promise<TestApp> {
 /** Boot with IWIK_FEATURE_ENROLLMENT=on (the stage-6 surface). */
 export async function bootEnrollmentApp(options: BootOptions = {}): Promise<TestApp> {
   return bootApp({ ...options, env: { IWIK_FEATURE_ENROLLMENT: 'on', ...options.env } });
+}
+
+/** Boot with IWIK_FEATURE_DEDUPE=on (the stage-8 surface). */
+export async function bootDedupeApp(options: BootOptions = {}): Promise<TestApp> {
+  return bootApp({ ...options, env: { IWIK_FEATURE_DEDUPE: 'on', ...options.env } });
+}
+
+/** What `buildHandlers` needs, taken from a booted app (the worker builds the same from config). */
+export function handlerDeps(t: TestApp): HandlerDeps {
+  return {
+    envelope: t.app.iwik.envelope,
+    registry: t.app.iwik.registry,
+    config: t.app.iwik.config,
+  };
+}
+
+/** The fixture with a fresh run_id and attempt_id so several runs can be accepted. */
+export async function freshRun(
+  t: TestApp,
+  identity: RunIdentity = {},
+  patch: (run: Run) => void = () => {},
+): Promise<Run> {
+  const run = await prepareRun(t, identity);
+  run.run_id = ulid();
+  run.attempt_id = ulid();
+  patch(run);
+  return run;
+}
+
+export interface OrgWithNode {
+  org_id: string;
+  org_ref: string;
+  node_id: string;
+  key: NodeKey;
+  token: string;
+}
+
+/** A second organization with one node and one token, straight through the identity module. */
+export async function createOrgWithNode(
+  t: TestApp,
+  name: string,
+  scopes: readonly Scope[] = ['query', 'submit', 'publish'],
+): Promise<OrgWithNode> {
+  const { pool } = t.app.iwik;
+  const key = generateNodeKey();
+  const org = await createOrganization(pool, name);
+  const node_id = await createNode(pool, org.org_id, key.pubkey);
+  const token = await issueToken(pool, node_id, scopes);
+  return { org_id: org.org_id, org_ref: org.org_ref, node_id, key, token };
+}
+
+/** Another node (and token) inside an existing organization. */
+export async function addNode(
+  t: TestApp,
+  orgId: string,
+  scopes: readonly Scope[] = ['query', 'submit', 'publish'],
+): Promise<{ node_id: string; key: NodeKey; token: string }> {
+  const { pool } = t.app.iwik;
+  const key = generateNodeKey();
+  const node_id = await createNode(pool, orgId, key.pubkey);
+  const token = await issueToken(pool, node_id, scopes);
+  return { node_id, key, token };
+}
+
+/** Preview + submit one fresh run as the given node; returns the raw submit response. */
+export async function submitFresh(
+  t: TestApp,
+  who: { node_id: string; key: NodeKey; token: string },
+  patch: (run: Run) => void = () => {},
+): Promise<{ res: LightMyRequestResponse; run: Run }> {
+  const run = await freshRun(t, { nodeId: who.node_id, token: who.token }, patch);
+  const p = await preview(t, run, who.token);
+  if (p.statusCode !== 200) throw new Error(`preview failed: ${p.statusCode} ${p.body}`);
+  const signed = signRun(run, who.key);
+  const res = await submit(t, p.json<{ preview_id: string }>().preview_id, signed, who.token);
+  return { res, run: signed };
+}
+
+export interface IndexRow {
+  run_id: string;
+  org_ref: string;
+  measurement_digest: string | null;
+  node_id: string | null;
+  index_context: Record<string, { value: unknown; origin: string }> | null;
+  is_fixture: boolean;
+  index_version: number | null;
+  shared_source_suspect: boolean;
+  duplicate_of: string | null;
+  withdrawn_at: Date | null;
+}
+
+/** The stage 8 plaintext columns of one run row. */
+export async function indexRow(t: TestApp, runId: string): Promise<IndexRow | undefined> {
+  const res = await t.app.iwik.pool.query<IndexRow>(
+    `SELECT run_id, org_ref, measurement_digest, node_id, index_context, is_fixture, index_version,
+            shared_source_suspect, duplicate_of, withdrawn_at
+       FROM evidence.runs WHERE run_id = $1`,
+    [runId],
+  );
+  return res.rows[0];
 }
 
 export function loadFixtureRun(): Run {

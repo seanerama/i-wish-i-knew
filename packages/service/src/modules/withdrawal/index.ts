@@ -6,7 +6,8 @@
 // `evidence.revision` FOR UPDATE lock intake uses, so a withdrawal is one
 // revision increment ordered with every accepted run; the runs are marked
 // `withdrawn_at` / `withdrawn_revision` in that transaction (so the effect
-// is immediate) and a `withdrawal_apply` job is queued for the derived
+// is immediate), the stage 8 contributions ledger is adjusted in the same
+// transaction, and a `withdrawal_apply` job is queued for the derived
 // state (cache eviction, and whatever later stages derive). Every run id
 // must belong to the caller's organization: a set with any foreign or
 // unknown id is 404 not_found as a whole, and the response never says which
@@ -161,11 +162,34 @@ export async function withdrawRuns(
       [withdrawalId, request.org_ref, runIds, request.reason_code, revision],
     );
     // Runs withdrawn by an earlier request keep their earlier marks.
-    await client.query(
+    const marked = await client.query<{
+      protocol_ref: string;
+      countable: boolean;
+    }>(
       `UPDATE evidence.runs SET withdrawn_at = now(), withdrawn_revision = $3
-        WHERE org_ref = $1 AND run_id = ANY($2::text[]) AND withdrawn_at IS NULL`,
+        WHERE org_ref = $1 AND run_id = ANY($2::text[]) AND withdrawn_at IS NULL
+        RETURNING protocol_ref,
+                  (index_version IS NOT NULL AND is_fixture = false AND duplicate_of IS NULL)
+                    AS countable`,
       [request.org_ref, runIds, revision],
     );
+    // Stage 8 ledger: every run this request withdrew that was counted when
+    // accepted (trusted projection, not a fixture, not a duplicate) moves
+    // from accepted to withdrawn. Rows that predate the projection are left
+    // to the index_backfill repair.
+    const perProtocol = new Map<string, number>();
+    for (const row of marked.rows) {
+      if (row.countable)
+        perProtocol.set(row.protocol_ref, (perProtocol.get(row.protocol_ref) ?? 0) + 1);
+    }
+    for (const [protocolRef, n] of perProtocol) {
+      await client.query(
+        `UPDATE evidence.contributions
+            SET runs_accepted = greatest(runs_accepted - $3, 0), runs_withdrawn = runs_withdrawn + $3
+          WHERE protocol_ref = $1 AND org_ref = $2`,
+        [protocolRef, request.org_ref, n],
+      );
+    }
     const protocols = [...new Set(owned.rows.map((r) => r.protocol_ref))];
     await client.query(
       `INSERT INTO evidence.revision_log (revision, protocol_ref, kind)

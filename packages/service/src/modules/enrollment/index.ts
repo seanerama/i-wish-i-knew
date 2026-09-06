@@ -76,7 +76,8 @@ export interface EnrollmentDeps {
   config: Config;
 }
 
-function operatorAuthorized(request: FastifyRequest, config: Config): boolean {
+/** Operator token check: hash the presented bearer token and compare in constant time. */
+export function operatorAuthorized(request: FastifyRequest, config: Config): boolean {
   const header = request.headers.authorization;
   if (typeof header !== 'string' || config.operatorTokenHash === undefined) return false;
   const match = /^Bearer\s+(\S+)$/i.exec(header.trim());

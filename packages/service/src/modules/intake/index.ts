@@ -3,6 +3,17 @@
 // rescanned for secrets, checked against the registry, bound to a preview,
 // signature-verified, stored encrypted under the organization's data key,
 // and answered with an intake receipt. Idempotent on run_id.
+//
+// Stage 8: next to the ciphertext intake writes the plaintext index
+// projection (projection.ts: measurement_digest, node_id, index_context over
+// the protocol's required_context keys only, is_fixture, index_version) and
+// keeps the contributions ledger (cohort/contributions.ts). Behind
+// IWIK_FEATURE_DEDUPE the same measurement_digest from the same organization
+// is accepted as `status: duplicate` (stored, never counted, `duplicate_of`
+// the earlier run) and the same digest from another organization marks both
+// rows `shared_source_suspect`. With the flag off intake behaves as before
+// but still writes the projection and the ledger, so no backfill is needed
+// when it is turned on.
 import { createHash, verify as verifySig } from 'node:crypto';
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import type { Run } from '@iwik/contracts';
@@ -13,11 +24,19 @@ import { withTransaction } from '../../db.js';
 import { ApiError } from '../../errors.js';
 import type { ErrorDetail } from '../../errors.js';
 import { ulid } from '../../ulid.js';
+import { recordContribution } from '../cohort/contributions.js';
 import type { Envelope } from '../crypto/index.js';
 import { SHARING_BACKFILL_VERSION } from '../jobs/handlers.js';
 import type { AuthContext } from '../identity/index.js';
 import { nodeIsRevoked, parsePublicKey, requireScope } from '../identity/index.js';
 import type { Registry } from '../registry/index.js';
+import {
+  INDEX_VERSION,
+  isFixtureRun,
+  measurementDigest,
+  projectIndexContext,
+} from './projection.js';
+import type { IndexContext } from './projection.js';
 import { sanitizeValue } from './sanitize.js';
 import type { SanitizationReport } from './sanitize.js';
 
@@ -78,6 +97,10 @@ interface Checked {
   run: Run;
   report: SanitizationReport;
   sharing_policy: Run['submission']['sharing_policy'];
+  /** Stage 8: the plaintext index projection, computed once and stored as is. */
+  measurement_digest: string;
+  index_context: IndexContext;
+  is_fixture: boolean;
 }
 
 function isObject(value: unknown): value is Record<string, unknown> {
@@ -103,6 +126,7 @@ export function checkRun(candidate: unknown, auth: AuthContext, deps: IntakeDeps
 
   const run = candidate as unknown as Run;
   const entry = deps.registry.get(run.protocol_ref);
+  let indexContext: IndexContext = {};
   if (entry === undefined) {
     issues.push({ path: '/protocol_ref', rule: 'protocol_unknown' });
   } else {
@@ -125,11 +149,26 @@ export function checkRun(candidate: unknown, auth: AuthContext, deps: IntakeDeps
       if (!present.has(key))
         issues.push({ path: `/context/${key}`, rule: 'required_context_missing' });
     }
+    // The index projection is rescanned on its own (stage 8): the values it
+    // carries are the only plaintext copy of any part of the body.
+    const projection = projectIndexContext(run, protocol.required_context, {
+      maxStringLength: deps.config.maxStringLength,
+      extraPatterns: deps.config.extraSecretPatterns,
+    });
+    issues.push(...projection.issues);
+    indexContext = projection.index_context;
   }
   if (run.node_id !== auth.node_id) issues.push({ path: '/node_id', rule: 'node_mismatch' });
   if (issues.length > 0) throw new ApiError(422, 'validation_failed', { details: issues });
 
-  return { run, report, sharing_policy: effectiveSharingPolicy(run) };
+  return {
+    run,
+    report,
+    sharing_policy: effectiveSharingPolicy(run),
+    measurement_digest: measurementDigest(run),
+    index_context: indexContext,
+    is_fixture: isFixtureRun(run),
+  };
 }
 
 function requireAuth(request: FastifyRequest): AuthContext {
@@ -242,15 +281,52 @@ async function storeRun(
       throw new ApiError(409, 'run_conflict');
     }
 
-    const bumped = await client.query<{ revision: string | number }>(
-      `UPDATE evidence.revision SET revision = revision + 1, updated_at = now()
-        WHERE singleton RETURNING revision`,
-    );
-    const revision = Number(bumped.rows[0]?.revision ?? 0);
-    await client.query(
-      `INSERT INTO evidence.revision_log (revision, protocol_ref, kind) VALUES ($1, $2, 'intake')`,
-      [revision, run.protocol_ref],
-    );
+    // Stage 8 dedupe, under the same lock. Withdrawn rows do not match: a
+    // re-upload after a withdrawal is a fresh contribution.
+    let duplicateOf: string | undefined;
+    let sharedSourceSuspect = false;
+    if (deps.config.featureDedupe) {
+      const same = await client.query<{
+        run_id: string;
+        org_ref: string;
+        duplicate_of: string | null;
+      }>(
+        `SELECT run_id, org_ref, duplicate_of FROM evidence.runs
+          WHERE protocol_ref = $1 AND measurement_digest = $2 AND withdrawn_at IS NULL
+          ORDER BY received_at, run_id`,
+        [run.protocol_ref, checked.measurement_digest],
+      );
+      const own = same.rows.filter((r) => r.org_ref === auth.org_ref);
+      // Point at the earliest original, not at another duplicate.
+      const original = own.find((r) => r.duplicate_of === null) ?? own[0];
+      if (original !== undefined) duplicateOf = original.run_id;
+      if (same.rows.some((r) => r.org_ref !== auth.org_ref)) {
+        sharedSourceSuspect = true;
+        await client.query(
+          `UPDATE evidence.runs SET shared_source_suspect = true
+            WHERE protocol_ref = $1 AND measurement_digest = $2 AND shared_source_suspect = false`,
+          [run.protocol_ref, checked.measurement_digest],
+        );
+      }
+    }
+    const status = duplicateOf === undefined ? 'accepted' : 'duplicate';
+
+    // A duplicate changes no cohort, so it is not an evidence revision: it
+    // is recorded at the current one and no query receipt goes stale for it.
+    let revision: number;
+    if (duplicateOf === undefined) {
+      const bumped = await client.query<{ revision: string | number }>(
+        `UPDATE evidence.revision SET revision = revision + 1, updated_at = now()
+          WHERE singleton RETURNING revision`,
+      );
+      revision = Number(bumped.rows[0]?.revision ?? 0);
+      await client.query(
+        `INSERT INTO evidence.revision_log (revision, protocol_ref, kind) VALUES ($1, $2, 'intake')`,
+        [revision, run.protocol_ref],
+      );
+    } else {
+      revision = await currentRevision(client);
+    }
 
     const stored: Run = {
       ...run,
@@ -269,19 +345,24 @@ async function storeRun(
       protocol_ref: run.protocol_ref,
       execution_status: run.execution_status,
       sharing_policy,
+      // Own organization only: the earlier run is the caller's.
+      ...(duplicateOf === undefined ? {} : { duplicate_of: duplicateOf }),
     };
     const inserted = await client.query<ReceiptRow>(
       `INSERT INTO evidence.receipts (receipt_id, org_ref, kind, status, payload, evidence_revision)
-       VALUES ($1, $2, 'intake', 'accepted', $3, $4)
+       VALUES ($1, $2, 'intake', $5, $3, $4)
        RETURNING receipt_id, kind, status, payload, evidence_revision, issued_at`,
-      [receiptId, auth.org_ref, JSON.stringify(payload), revision],
+      [receiptId, auth.org_ref, JSON.stringify(payload), revision, status],
     );
     await client.query(
       `INSERT INTO evidence.runs
          (run_id, org_ref, protocol_ref, protocol_digest, harness_digest, execution_status,
           content_digest, body_ciphertext, key_id, receipt_id, evidence_revision,
-          sharing_policy, backfill_version)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)`,
+          sharing_policy, backfill_version,
+          measurement_digest, node_id, index_context, is_fixture, index_version,
+          shared_source_suspect, duplicate_of)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13,
+               $14, $15, $16, $17, $18, $19, $20)`,
       [
         run.run_id,
         auth.org_ref,
@@ -296,8 +377,20 @@ async function storeRun(
         revision,
         sharing_policy,
         SHARING_BACKFILL_VERSION,
+        checked.measurement_digest,
+        run.node_id,
+        JSON.stringify(checked.index_context),
+        checked.is_fixture,
+        INDEX_VERSION,
+        sharedSourceSuspect,
+        duplicateOf ?? null,
       ],
     );
+    // Fixture runs are never releasable (ADR-0003) and a duplicate is not a
+    // new measurement: neither touches the ledger.
+    if (!checked.is_fixture && duplicateOf === undefined) {
+      await recordContribution(client, run.protocol_ref, auth.org_ref);
+    }
     const row = inserted.rows[0];
     if (row === undefined) throw new Error('receipt insert returned no row');
     return { status: 201, receipt: toReceipt(row) };
@@ -376,6 +469,7 @@ export function registerIntakeRoutes(app: FastifyInstance, deps: IntakeDeps): vo
           run_id: checked.run.run_id,
           receipt_id: stored.receipt.receipt_id,
           status: stored.status,
+          receipt_status: stored.receipt.status,
         },
         stored.status === 201 ? 'run accepted' : 'run already accepted',
       );
