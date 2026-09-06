@@ -1,0 +1,115 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:iwik:pack:inference-api:latency@1:result",
+  "title": "inference-api/latency@1 result",
+  "description": "Per-attempt TTFT and total latency, status, error class, tokens, plus summary percentiles. Written by harness/index.js as result.json.",
+  "type": "object",
+  "required": ["protocol_ref", "harness_version", "prompt_set", "attempts", "summary"],
+  "additionalProperties": false,
+  "properties": {
+    "protocol_ref": { "const": "inference-api/latency@1" },
+    "harness_version": { "type": "string", "minLength": 1 },
+    "prompt_set": { "type": "string", "minLength": 1 },
+    "attempts": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/attempt" }
+    },
+    "summary": { "$ref": "#/$defs/summary" }
+  },
+  "$defs": {
+    "millis": { "type": "number", "minimum": 0 },
+    "attempt": {
+      "type": "object",
+      "required": [
+        "attempt_index",
+        "status",
+        "ttft_ms",
+        "total_ms",
+        "http_status",
+        "error_class",
+        "tokens"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "attempt_index": { "type": "integer", "minimum": 0 },
+        "status": { "type": "string", "enum": ["succeeded", "failed"] },
+        "ttft_ms": { "oneOf": [{ "$ref": "#/$defs/millis" }, { "type": "null" }] },
+        "total_ms": { "$ref": "#/$defs/millis" },
+        "http_status": {
+          "oneOf": [{ "type": "integer", "minimum": 100, "maximum": 599 }, { "type": "null" }]
+        },
+        "error_class": {
+          "oneOf": [
+            {
+              "type": "string",
+              "enum": [
+                "http_4xx",
+                "http_5xx",
+                "http_other",
+                "timeout",
+                "connection",
+                "malformed_response"
+              ]
+            },
+            { "type": "null" }
+          ]
+        },
+        "tokens": {
+          "type": "object",
+          "required": ["completion_tokens", "prompt_tokens", "origin"],
+          "additionalProperties": false,
+          "properties": {
+            "completion_tokens": {
+              "oneOf": [{ "type": "integer", "minimum": 0 }, { "type": "null" }]
+            },
+            "prompt_tokens": { "oneOf": [{ "type": "integer", "minimum": 0 }, { "type": "null" }] },
+            "origin": { "type": "string", "enum": ["reported", "counted"] }
+          }
+        }
+      }
+    },
+    "distribution": {
+      "type": "object",
+      "required": ["samples", "min", "max", "p50", "p90", "p95", "p99"],
+      "additionalProperties": false,
+      "properties": {
+        "samples": { "type": "integer", "minimum": 0 },
+        "min": { "oneOf": [{ "$ref": "#/$defs/millis" }, { "type": "null" }] },
+        "max": { "oneOf": [{ "$ref": "#/$defs/millis" }, { "type": "null" }] },
+        "p50": { "oneOf": [{ "$ref": "#/$defs/millis" }, { "type": "null" }] },
+        "p90": { "oneOf": [{ "$ref": "#/$defs/millis" }, { "type": "null" }] },
+        "p95": { "oneOf": [{ "$ref": "#/$defs/millis" }, { "type": "null" }] },
+        "p99": { "oneOf": [{ "$ref": "#/$defs/millis" }, { "type": "null" }] }
+      }
+    },
+    "summary": {
+      "type": "object",
+      "required": [
+        "planned",
+        "attempted",
+        "succeeded",
+        "failed",
+        "error_rate",
+        "error_classes",
+        "ttft_ms",
+        "total_ms"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "planned": { "type": "integer", "minimum": 1 },
+        "attempted": { "type": "integer", "minimum": 0 },
+        "succeeded": { "type": "integer", "minimum": 0 },
+        "failed": { "type": "integer", "minimum": 0 },
+        "error_rate": {
+          "oneOf": [{ "type": "number", "minimum": 0, "maximum": 1 }, { "type": "null" }]
+        },
+        "error_classes": {
+          "type": "object",
+          "additionalProperties": { "type": "integer", "minimum": 0 }
+        },
+        "ttft_ms": { "$ref": "#/$defs/distribution" },
+        "total_ms": { "$ref": "#/$defs/distribution" }
+      }
+    }
+  }
+}

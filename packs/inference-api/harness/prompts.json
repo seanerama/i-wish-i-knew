@@ -1,0 +1,11 @@
+{
+  "id": "latency-fixed-v1",
+  "system": "You are a terse assistant. Reply in one short sentence.",
+  "prompts": [
+    "Name one prime number greater than ten.",
+    "What colour is a clear daytime sky?",
+    "Give the plural of the word mouse.",
+    "How many minutes are in two hours?",
+    "Name a planet in the solar system that is not Earth."
+  ]
+}

@@ -1,0 +1,17 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:iwik:contracts:v1:Challenge",
+  "title": "Challenge",
+  "description": "Challenge against a finding (stub)",
+  "type": "object",
+  "required": [
+    "challenge_id"
+  ],
+  "properties": {
+    "challenge_id": {
+      "pattern": "^[0-9A-HJKMNP-TV-Z]{26}$",
+      "description": "ULID identifier",
+      "type": "string"
+    }
+  }
+}

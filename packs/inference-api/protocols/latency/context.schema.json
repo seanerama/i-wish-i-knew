@@ -1,0 +1,60 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:iwik:pack:inference-api:latency@1:context",
+  "title": "inference-api/latency@1 context",
+  "description": "Validates the projection { <context key>: value } of a run's ContextProfile (non-null values only). The keys listed in `required` are the protocol's required context: a run whose profile carries any of them as null/unknown is `excluded`, not defaulted (ADR-0003).",
+  "type": "object",
+  "required": [
+    "model.requested",
+    "model.reported",
+    "concurrency",
+    "retry_policy",
+    "cache_disabled",
+    "client_region"
+  ],
+  "properties": {
+    "model.requested": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Model identifier the operator asked the endpoint for"
+    },
+    "model.reported": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Model identifier the endpoint reported in its responses (origin: measured)"
+    },
+    "concurrency": {
+      "type": "integer",
+      "minimum": 1,
+      "description": "Concurrent in-flight requests during the run (this harness: always 1)"
+    },
+    "retry_policy": {
+      "type": "string",
+      "enum": ["none", "fixed", "exponential"],
+      "description": "Client-side retry behaviour (this harness: none)"
+    },
+    "cache_disabled": {
+      "type": "boolean",
+      "description": "Whether provider-side prompt/response caching was disabled for the run"
+    },
+    "client_region": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Where the client ran, as an operator-chosen label (e.g. a cloud region or `local`)"
+    },
+    "max_tokens": {
+      "type": "integer",
+      "minimum": 1,
+      "description": "max_tokens sent with every request"
+    },
+    "prompt_set": {
+      "type": "string",
+      "description": "Identifier of the fixed prompt set the harness used"
+    },
+    "harness.version": {
+      "type": "string",
+      "description": "Harness version string"
+    }
+  },
+  "additionalProperties": true
+}

@@ -1,0 +1,16 @@
+{
+  "receipt_id": "01ARZ3NDEKTSV4RRFFQ69G5RCP",
+  "query_digest": "sha256:2b4d6c8a0e1f3b5d7c9a2e4f6b8d0c1a3f5e7d9b1c3a5e7f9b2d4c6a8e0f1b3d",
+  "status": "released",
+  "cohort": {
+    "protocol_ref": "inference-api/latency@1",
+    "filters": { "concurrency": 1 },
+    "orgs": "3-5",
+    "runs": "6-10"
+  },
+  "calculation_version": "latency-summary/1",
+  "policy_version": "pilot-disclosure/1",
+  "evidence_revision": 42,
+  "run_id": "01ARZ3NDEKTSV4RRFFQ69G5FAV",
+  "issued_at": "2026-09-05T12:30:00Z"
+}

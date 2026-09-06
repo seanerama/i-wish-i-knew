@@ -1,0 +1,8 @@
+node_modules/
+dist/
+package-lock.json
+contracts/schema/
+**/*.md
+.github/
+.verity/
+.claude/

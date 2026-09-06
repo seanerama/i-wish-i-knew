@@ -1,0 +1,22 @@
+{
+  "ref": "inference-api/latency@1",
+  "protocol_digest": "sha256:2e591cdcf22164123bad5ceb5869b442661e6868fe1f4b8bdb10497e92ffe017",
+  "harness_digest": "sha256:6b710001ccdf99bdb819fa8def5a12fb6457ee2f0ff28105b765eee2502f82f9",
+  "status": "accepted",
+  "kind": "controlled",
+  "required_context": [
+    "model.requested",
+    "model.reported",
+    "concurrency",
+    "retry_policy",
+    "cache_disabled",
+    "client_region"
+  ],
+  "permitted_claims": ["latency_distribution", "error_rate"],
+  "compatibility": {
+    "harness_digests": ["sha256:6b710001ccdf99bdb819fa8def5a12fb6457ee2f0ff28105b765eee2502f82f9"],
+    "notes": "Sequential streaming chat completions with a fixed prompt set (harness/prompts.json); TTFT is the first non-empty content delta, total is stream end. Only harness digests listed here may execute this protocol."
+  },
+  "context_schema_digest": "sha256:e1aa61b46b1bb9e996f986069823f49f583e5a294eef5a7fc916cd7a6f8eeb17",
+  "result_schema_digest": "sha256:71f2b7e92ed533e2b0e3e89d4873aed3ffd4da4578059e9e3982360a3a069915"
+}

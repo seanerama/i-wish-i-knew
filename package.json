@@ -1,0 +1,35 @@
+{
+  "name": "i-wish-i-knew",
+  "version": "0.0.1",
+  "private": true,
+  "description": "I Wish I Knew — confidential evidence cooperative for measurable technical systems (monorepo root)",
+  "license": "MIT",
+  "engines": {
+    "node": "22.x"
+  },
+  "workspaces": [
+    "packages/*"
+  ],
+  "scripts": {
+    "build": "npm run build --workspaces --if-present",
+    "contracts:build": "npm run contracts:build --workspaces --if-present",
+    "contracts:check": "npm run contracts:check --workspaces --if-present",
+    "typecheck": "npm run typecheck --workspaces --if-present",
+    "lint": "eslint . && prettier --check .",
+    "format": "prettier --write .",
+    "test": "npm run test --workspaces --if-present && node --test \"packs/inference-api/test/*.test.js\"",
+    "pack:digest": "node scripts/pack-digest.js"
+  },
+  "devDependencies": {
+    "@eslint/js": "9.39.5",
+    "@types/node": "22.20.1",
+    "ajv": "8.20.0",
+    "ajv-formats": "3.0.1",
+    "eslint": "9.39.5",
+    "eslint-config-prettier": "10.1.8",
+    "globals": "17.12.0",
+    "prettier": "3.9.6",
+    "typescript": "5.9.3",
+    "typescript-eslint": "8.69.0"
+  }
+}

@@ -1,0 +1,17 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:iwik:contracts:v1:Investigation",
+  "title": "Investigation",
+  "description": "Investigation: question, requested context, priorities, thresholds (stub)",
+  "type": "object",
+  "required": [
+    "investigation_id"
+  ],
+  "properties": {
+    "investigation_id": {
+      "pattern": "^[0-9A-HJKMNP-TV-Z]{26}$",
+      "description": "ULID identifier",
+      "type": "string"
+    }
+  }
+}
