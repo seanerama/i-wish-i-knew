@@ -49,7 +49,10 @@ Service configuration is environment-only: `DATABASE_URL`, `IWIK_KEK`, `PORT`,
 `IWIK_FEATURE_INTAKE` (kill-switch for preview/submit; default `off` when
 `NODE_ENV=production`, `on` otherwise), `IWIK_FEATURE_WITHDRAWAL` (stage 7,
 default `off` everywhere; see "Withdrawal" below), `IWIK_FEATURE_DEDUPE` (stage 8,
-default `off` everywhere; see "Dedupe" below), and the optional seed identity
+default `off` everywhere; see "Dedupe" below), `IWIK_FEATURE_COOPERATIVE_QUERY`
+(stage 9, default `off` everywhere; see `smoke/query.md`),
+`IWIK_FEATURE_CHALLENGE` (stage 10, default `off` everywhere; see "Challenge
+and outcome ledger" below), and the optional seed identity
 `IWIK_SEED_ORG`, `IWIK_SEED_NODE_TOKEN`, `IWIK_SEED_NODE_PUBKEY` (base64 raw
 Ed25519 public key), `IWIK_SEED_NODE_ID`. Extra secret patterns for intake:
 `IWIK_SECRET_PATTERNS` (JSON array of regex sources). `IWIK_TRUST_PROXY`
@@ -154,6 +157,59 @@ ADR-0002 thresholds, ADR-0003 "one contributor = one organization"):
   Filter keys must be `required_context` keys; values parse as JSON scalars
   (`1`, `true`) or strings. Exact counts exist only in the internal
   `cohortPreview` used by stage 9. Smoke check: `smoke/cohorts.md`.
+
+## Challenge and outcome ledger (stage 10)
+
+Behind `IWIK_FEATURE_CHALLENGE` (default **off**: `POST /v1/challenges`,
+`GET /v1/challenges/{id}`, `POST /v1/outcomes`, and the operator resolve
+endpoint answer `404 feature_disabled` before authentication, the operator
+console pages `/admin/login` and `/admin/challenges` are `404`, and the MCP
+tools `challenge_finding`, `register_prediction`, `report_outcome` answer
+`feature_disabled` with a next step). Brief R9 and R10.
+
+- **Claims.** Every finding a cooperative answer releases becomes a `Claim`
+  row (`evidence.claims`: origin `measured`, corroboration `unreplicated`,
+  status `supported`, its cohort as bands, never a run id), written inside
+  the stage 9 release transaction whether or not the flag is on, and the
+  finding carries its `claim_id` (additive on `AnswerReceipt.result.findings`).
+- **Challenges.** `POST /v1/challenges` (scope `publish`) targets one of the
+  caller's released query receipts or a claim released on one, with `grounds`
+  from `method | context_mismatch | data_error | replication_failed |
+  affiliation` and a `statement` in the pack vocabulary (claim, metric,
+  statistic, context key, direction, one of the caller's own runs as
+  `replication_run_id`) plus the one bounded free-text `note` (500 chars,
+  rescanned for secret patterns, seen by the operator only). Foreign or
+  unknown targets are `404` as a whole; five per organization per rolling
+  day, then `429` with `Retry-After` (filing many objections suppresses
+  nothing: a challenge changes no evidence until the operator resolves it).
+  A challenge is visible to its filer (`GET /v1/challenges/{id}`) and the
+  operator only.
+- **Resolution** (`POST /v1/admin/challenges/{id}/resolve`, operator token,
+  or the `/admin/challenges` console after an operator sign-in with the same
+  token, CSRF-protected and rate limited per address): `upheld` records a
+  `contradicts` relationship and marks the targeted claims `contradicted` /
+  `disputed`; `rejected` records `narrows` and leaves them; `superseded`
+  records `supersedes` and marks them `rejected`. The challenge's own
+  assertion is stored as a counter-claim (origin `reported`). Every
+  resolution bumps the evidence revision (`revision_log` kind `challenge`),
+  so query receipts of that protocol issued earlier read `stale`; `409
+  challenge_resolved` on a second attempt. Audit rows carry ids only.
+- **Predictions and outcomes** (`POST /v1/outcomes`, two steps). First
+  `{ prediction }`: the receipt relied on, the target (claim, metric,
+  statistic, threshold), a horizon date, an optional probability, and the
+  evaluation rule, stored with `registered_at`. Later
+  `{ prediction_id, observed }`: `result` (`met | not_met | indeterminate`)
+  and `environment_changed`, stored in separate columns so a moved
+  environment is never folded into "prediction wrong". Exactly one
+  observation per prediction (`409 outcome_exists`); the stored prediction
+  can never be altered (`409 prediction_immutable` when a body restates it,
+  `409 target_mismatch` when a restated target or receipt differs, and a
+  database trigger refuses updates outright).
+- **Runner.** `iwik challenge <receipt_id|claim:<id>> --grounds <g> [--note ...]`,
+  `iwik predict --receipt <id> --target <claim[.metric[.statistic]]> --horizon <date> --rule <r>`,
+  `iwik outcome <prediction_id> --result <r> [--environment-changed]`;
+  `SKILL.md` tells the agent to register a prediction BEFORE acting. Smoke
+  check: `smoke/challenge.md`.
 
 ## Enrollment (pilot)
 
