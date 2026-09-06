@@ -13,6 +13,7 @@ import { registerErrorHandling } from './errors.js';
 import { registerHealth } from './health.js';
 import { loggerOptions } from './logger.js';
 import { migrationsCurrent } from './migrate.js';
+import { registerAggregateRoutes } from './modules/aggregate/index.js';
 import { registerConsoleRoutes, viewsDir } from './modules/console/index.js';
 import { Envelope } from './modules/crypto/index.js';
 import { registerEnrollmentRoutes } from './modules/enrollment/index.js';
@@ -83,6 +84,7 @@ export async function buildApp(config: Config): Promise<FastifyInstance> {
   registerHealth(app, pool, config);
   registerRegistryRoutes(app, registry);
   registerIntakeRoutes(app, { pool, envelope, registry, config });
+  registerAggregateRoutes(app, { pool, registry });
   registerConsoleRoutes(app, { pool, config, registry, loginFailures });
   registerEnrollmentRoutes(app, { pool, config });
 

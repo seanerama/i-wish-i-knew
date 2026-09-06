@@ -43,6 +43,43 @@ const RECEIPT = {
   },
 };
 
+/** A query receipt as re-read through GET /v1/receipts/{id}: the AnswerReceipt plus `kind: query`. */
+const QUERY_RECEIPT = {
+  allOf: [
+    { $ref: '#/components/schemas/AnswerReceipt' },
+    {
+      type: 'object',
+      required: ['kind'],
+      properties: { kind: { type: 'string', enum: ['query'] } },
+    },
+  ],
+};
+
+const QUERY_REQUEST = {
+  type: 'object',
+  required: ['protocol_ref'],
+  additionalProperties: false,
+  properties: {
+    protocol_ref: { type: 'string' },
+    investigation_id: { type: 'string' },
+    context_filters: {
+      type: 'object',
+      additionalProperties: { type: ['string', 'number', 'boolean', 'null'] },
+    },
+    as_of_revision: { type: 'integer', minimum: 0 },
+  },
+};
+
+const WHOAMI = {
+  type: 'object',
+  required: ['node_id', 'org_display_name', 'scopes'],
+  properties: {
+    node_id: { type: 'string' },
+    org_display_name: { type: 'string' },
+    scopes: { type: 'array', items: { type: 'string', enum: ['query', 'submit', 'publish'] } },
+  },
+};
+
 function errorResponses(...codes: Array<[number, string]>): Record<string, unknown> {
   const out: Record<string, unknown> = {};
   for (const [status, description] of codes) {
@@ -87,7 +124,11 @@ export function buildOpenApi(): Record<string, unknown> {
         ErrorEnvelope: ERROR_ENVELOPE,
         Run: stripDialect(schemaDocument('Run')),
         ProtocolVersion: stripDialect(schemaDocument('ProtocolVersion')),
+        AnswerReceipt: stripDialect(schemaDocument('AnswerReceipt')),
         IntakeReceipt: RECEIPT,
+        QueryReceipt: QUERY_RECEIPT,
+        QueryRequest: QUERY_REQUEST,
+        WhoAmI: WHOAMI,
       },
     },
     paths: {
@@ -265,7 +306,7 @@ export function buildOpenApi(): Record<string, unknown> {
       },
       '/v1/receipts/{id}': {
         get: {
-          summary: 'Re-read one of your organization’s receipts',
+          summary: 'Re-read one of your organization’s receipts (intake or query)',
           security: bearer,
           'x-scope': 'query',
           parameters: [{ name: 'id', in: 'path', required: true, schema: { type: 'string' } }],
@@ -273,10 +314,61 @@ export function buildOpenApi(): Record<string, unknown> {
             '200': {
               description: 'receipt',
               content: {
-                'application/json': { schema: { $ref: '#/components/schemas/IntakeReceipt' } },
+                'application/json': {
+                  schema: {
+                    oneOf: [
+                      { $ref: '#/components/schemas/IntakeReceipt' },
+                      { $ref: '#/components/schemas/QueryReceipt' },
+                    ],
+                  },
+                },
               },
             },
             ...errorResponses([401, 'unauthorized'], [403, 'scope_required'], [404, 'not_found']),
+          },
+        },
+      },
+      '/v1/whoami': {
+        get: {
+          summary:
+            'Node identity (stage 5, additive): the node id, organization display name, and scopes behind the presented token; never the org_ref',
+          security: bearer,
+          'x-scope': 'any',
+          responses: {
+            '200': {
+              description: 'identity',
+              content: { 'application/json': { schema: { $ref: '#/components/schemas/WhoAmI' } } },
+            },
+            ...errorResponses([401, 'unauthorized or node_revoked']),
+          },
+        },
+      },
+      '/v1/evidence/query': {
+        post: {
+          summary:
+            'Compatible-cohort evidence query (stage 5 stub): validates the request and answers an AnswerReceipt with status insufficient_evidence and reason no_cooperative_evidence until aggregation lands',
+          description:
+            'No matching or aggregation exists yet; the receipt is persisted (kind query) and re-readable through GET /v1/receipts/{id}.',
+          security: bearer,
+          'x-scope': 'query',
+          requestBody: {
+            required: true,
+            content: {
+              'application/json': { schema: { $ref: '#/components/schemas/QueryRequest' } },
+            },
+          },
+          responses: {
+            '200': {
+              description: 'AnswerReceipt (released, suppressed, or insufficient_evidence)',
+              content: {
+                'application/json': { schema: { $ref: '#/components/schemas/AnswerReceipt' } },
+              },
+            },
+            ...errorResponses(
+              [401, 'unauthorized'],
+              [403, 'scope_required'],
+              [422, 'validation_failed (shape, or protocol_unknown)'],
+            ),
           },
         },
       },

@@ -47,7 +47,7 @@ export function generateNodeKey(): NodeKey {
   return { privateKey, pubkey: der.subarray(der.length - 32).toString('base64') };
 }
 
-/** The same key as a PEM SPKI block, the other form `iwik init` may print. */
+/** The same key as a PEM SPKI block: accepted at registration, though `iwik init` prints only the base64 raw key. */
 export function pubkeyPem(key: NodeKey): string {
   const spki = Buffer.concat([
     Buffer.from('302a300506032b6570032100', 'hex'),

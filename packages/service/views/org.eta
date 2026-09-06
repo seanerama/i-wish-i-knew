@@ -50,7 +50,7 @@
 # or, with the runner installed globally:
 iwik init --service <%= it.service_url %></pre>
           <code>iwik init</code> creates <code>~/.iwik/</code>, generates the node's Ed25519 signing key (<code>key.ed25519</code>, mode 0600), and prints the node's <strong>public key</strong>.</li>
-        <li>Paste that public key below and register the node. Accepted formats (both are what <code>iwik init</code> may print):
+        <li>Paste that public key below and register the node. <code>iwik init</code> prints the base64 raw key; a PEM block is accepted here too but is never what <code>iwik init</code> prints. Accepted formats:
           <ul>
             <li><strong>base64 raw key</strong>: one line of 44 characters, the 32 raw bytes of the Ed25519 public key (no PEM header lines), or</li>
             <li><strong>PEM SPKI block</strong>: <code>-----BEGIN PUBLIC KEY-----</code> ... <code>-----END PUBLIC KEY-----</code>.</li>
