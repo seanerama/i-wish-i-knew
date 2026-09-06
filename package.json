@@ -8,16 +8,20 @@
     "node": "22.x"
   },
   "workspaces": [
-    "packages/*"
+    "packages/contracts",
+    "packages/service"
   ],
   "scripts": {
     "build": "npm run build --workspaces --if-present",
+    "build:contracts": "npm run build -w @iwik/contracts",
     "contracts:build": "npm run contracts:build --workspaces --if-present",
     "contracts:check": "npm run contracts:check --workspaces --if-present",
-    "typecheck": "npm run typecheck --workspaces --if-present",
+    "typecheck": "npm run build:contracts && npm run typecheck --workspaces --if-present",
     "lint": "eslint . && prettier --check .",
     "format": "prettier --write .",
-    "test": "npm run test --workspaces --if-present && node --test \"packs/inference-api/test/*.test.js\"",
+    "test": "npm run build:contracts && npm run test --workspaces --if-present && node --test \"packs/inference-api/test/*.test.js\"",
+    "migrate": "npm run migrate -w @iwik/service",
+    "dev": "npm run dev -w @iwik/service",
     "pack:digest": "node scripts/pack-digest.js"
   },
   "devDependencies": {
