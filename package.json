@@ -9,17 +9,19 @@
   },
   "workspaces": [
     "packages/contracts",
+    "packages/runner",
     "packages/service"
   ],
   "scripts": {
     "build": "npm run build --workspaces --if-present",
     "build:contracts": "npm run build -w @iwik/contracts",
+    "build:runner": "npm run build -w i-wish-i-knew",
     "contracts:build": "npm run contracts:build --workspaces --if-present",
     "contracts:check": "npm run contracts:check --workspaces --if-present",
-    "typecheck": "npm run build:contracts && npm run typecheck --workspaces --if-present",
+    "typecheck": "npm run build:contracts && npm run build:runner && npm run typecheck --workspaces --if-present",
     "lint": "eslint . && prettier --check .",
     "format": "prettier --write .",
-    "test": "npm run build:contracts && npm run test --workspaces --if-present && node --test \"packs/inference-api/test/*.test.js\"",
+    "test": "npm run build:contracts && npm run build:runner && npm run test --workspaces --if-present && node --test \"packs/inference-api/test/*.test.js\"",
     "migrate": "npm run migrate -w @iwik/service",
     "dev": "npm run dev -w @iwik/service",
     "pack:digest": "node scripts/pack-digest.js"
