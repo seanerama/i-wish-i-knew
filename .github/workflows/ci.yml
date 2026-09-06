@@ -74,3 +74,46 @@ jobs:
         uses: gitleaks/gitleaks-action@v2
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+  # Stage 4 (ADR-0004): prove the multi-arch build that release.yml will push
+  # succeeds BEFORE a tag is cut. Same Dockerfile, same platforms, no push.
+  # The job always runs (so it can be a required check) but the emulated
+  # arm64 build only happens when a PR touches the image/deploy surface or on
+  # a push to main; otherwise it reports a visible SKIP and exits 0.
+  release-dry-run:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - name: Detect image/deploy changes
+        id: changes
+        uses: dorny/paths-filter@v4
+        with:
+          filters: |
+            image:
+              - 'Dockerfile'
+              - '.dockerignore'
+              - 'docker-compose.yml'
+              - 'deploy/**'
+              - '.github/workflows/release.yml'
+              - '.github/workflows/ci.yml'
+              - 'package-lock.json'
+      - name: Skip notice
+        if: github.event_name == 'pull_request' && steps.changes.outputs.image != 'true'
+        run: echo "SKIP release-dry-run - no change to Dockerfile, .dockerignore, docker-compose.yml, deploy/, release.yml, ci.yml, or package-lock.json"
+      - uses: docker/setup-qemu-action@v4
+        if: github.event_name != 'pull_request' || steps.changes.outputs.image == 'true'
+        with:
+          platforms: arm64
+      - uses: docker/setup-buildx-action@v4
+        if: github.event_name != 'pull_request' || steps.changes.outputs.image == 'true'
+      - name: docker buildx build --platform linux/amd64,linux/arm64 (no push)
+        if: github.event_name != 'pull_request' || steps.changes.outputs.image == 'true'
+        uses: docker/build-push-action@v7
+        with:
+          context: .
+          platforms: linux/amd64,linux/arm64
+          push: false
+          tags: i-wish-i-knew:dryrun
+          provenance: false
+          sbom: false
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
