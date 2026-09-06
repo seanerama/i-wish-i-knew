@@ -178,6 +178,29 @@ iwik init --service <%= it.service_url %></pre>
       <% } %>
     </section>
 
+    <section aria-labelledby="receipts-heading">
+      <h2 id="receipts-heading">Answer receipts</h2>
+      <p class="muted">Receipts for evidence queries this organization asked (newest first, up to 50). A receipt reads <code>stale</code> once a later evidence revision touched its protocol.</p>
+      <% if (it.receipts.length === 0) { %>
+        <p class="muted" id="no-receipts">No evidence queries yet.</p>
+      <% } else { %>
+        <table id="receipts">
+          <thead><tr><th>Receipt id</th><th>Protocol</th><th>Status</th><th>Revision</th><th>Issued</th></tr></thead>
+          <tbody>
+            <% it.receipts.forEach(function (receipt) { %>
+              <tr id="receipt-<%= receipt.receipt_id %>">
+                <td class="mono"><a href="/receipts/<%= receipt.receipt_id %>"><%= receipt.receipt_id %></a></td>
+                <td><%= receipt.protocol_ref === null ? '' : receipt.protocol_ref %></td>
+                <td><%= receipt.status %></td>
+                <td><%= receipt.evidence_revision %></td>
+                <td><%= receipt.issued_at %></td>
+              </tr>
+            <% }) %>
+          </tbody>
+        </table>
+      <% } %>
+    </section>
+
     <form method="post" action="/console/logout">
       <input type="hidden" name="_csrf" value="<%= it.csrf %>" />
       <button type="submit">Sign out</button>

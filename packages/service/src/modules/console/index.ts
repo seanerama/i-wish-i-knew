@@ -22,8 +22,9 @@ import {
 } from '../identity/index.js';
 import { DUMMY_HASH, PASSWORD_MAX_LENGTH, verifyPassword } from '../identity/password.js';
 import { FailureWindow } from '../identity/ratelimit.js';
-import { currentRevision } from '../intake/index.js';
+import { currentRevision, findReceipt, withStaleness } from '../intake/index.js';
 import type { Registry } from '../registry/index.js';
+import { ULID_PATTERN } from '../../ulid.js';
 import { clearSession, csrfToken, requireCsrf, resolveSession, setSession } from './session.js';
 import type { Session } from './session.js';
 
@@ -127,6 +128,7 @@ export function registerConsoleRoutes(app: FastifyInstance, deps: ConsoleDeps): 
       enrollment_enabled: enrollmentOn,
       withdrawal_enabled: deps.config.featureWithdrawal,
       dedupe_enabled: deps.config.featureDedupe,
+      cooperative_query_enabled: deps.config.featureCooperativeQuery,
       session: view,
       login_failed: request.query.login === 'failed',
       csrf: csrfToken(request, reply, deps.config),
@@ -212,5 +214,47 @@ export function registerConsoleRoutes(app: FastifyInstance, deps: ConsoleDeps): 
     requireCsrf(request, deps.config);
     clearSession(reply);
     return reply.redirect('/', 303);
+  });
+
+  // Stage 9: one of the signed-in organization's query receipts, rendered
+  // section by section (the same AnswerReceipt GET /v1/receipts/{id} returns,
+  // staleness included). Either session kind may read; another
+  // organization's receipt is a 404 page, never a hint that it exists.
+  app.get<{ Params: { id: string } }>('/receipts/:id', async (request, reply) => {
+    const session = await resolveSession(request, deps.config, deps.pool);
+    if (session === undefined) return reply.redirect('/', 303);
+    const orgRef =
+      session.kind === 'node'
+        ? session.auth.org_ref
+        : (
+            await deps.pool.query<{ org_ref: string }>(
+              `SELECT org_ref FROM identity.org_refs WHERE org_id = $1`,
+              [session.org_id],
+            )
+          ).rows[0]?.org_ref;
+    const id = request.params.id;
+    const found =
+      orgRef !== undefined && ULID_PATTERN.test(id)
+        ? await findReceipt(deps.pool, id, orgRef)
+        : undefined;
+    if (found === undefined || found.kind !== 'query') {
+      return reply.status(404).view('message', {
+        product: PRODUCT_NAME,
+        title: 'Receipt not found',
+        message: 'No query receipt with that id belongs to your organization.',
+      });
+    }
+    const receipt = await withStaleness(deps.pool, found);
+    const result =
+      typeof receipt['result'] === 'object' && receipt['result'] !== null
+        ? (receipt['result'] as Record<string, unknown>)
+        : {};
+    return reply.view('receipt', {
+      product: PRODUCT_NAME,
+      org_name: session.kind === 'node' ? session.auth.org_name : session.org_name,
+      receipt,
+      result,
+      json: JSON.stringify(receipt, null, 2),
+    });
   });
 }

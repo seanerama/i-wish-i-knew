@@ -1,0 +1,217 @@
+{
+  "receipt_id": "01ARZ3NDEKTSV4RRFFQ69G5RQ1",
+  "query_digest": "sha256:2b4d6c8a0e1f3b5d7c9a2e4f6b8d0c1a3f5e7d9b1c3a5e7f9b2d4c6a8e0f1b3d",
+  "status": "released",
+  "cohort": {
+    "protocol_ref": "inference-api/latency@1",
+    "filters": { "client_region": "eu-west", "concurrency": 1 },
+    "orgs": "3-5",
+    "runs": "5-10"
+  },
+  "calculation_version": "latency-v1",
+  "policy_version": "2026-09-p1",
+  "evidence_revision": 42,
+  "result": {
+    "findings": [
+      {
+        "claim": "latency_distribution",
+        "status": "released",
+        "statement": "Across 5-10 runs from 3-5 organizations, per-run nearest-rank percentiles of ttft_ms and total_ms are reported as spreads across runs; no pooled number is released.",
+        "metrics": ["ttft_ms", "total_ms"]
+      },
+      {
+        "claim": "error_rate",
+        "status": "released",
+        "statement": "Across 5-10 runs from 3-5 organizations, the per-run error rate (failed / attempted) is reported as a spread across runs.",
+        "metrics": ["error_rate"]
+      }
+    ],
+    "applicability": {
+      "filters_applied": ["client_region", "concurrency"],
+      "unfiltered_required_context": [
+        "cache_disabled",
+        "model.reported",
+        "model.requested",
+        "retry_policy"
+      ],
+      "context_known": {
+        "cache_disabled": "5-10",
+        "model.reported": "5-10",
+        "model.requested": "5-10",
+        "retry_policy": "<5"
+      },
+      "ranking": "measured > provider_reported > unknown on the unfiltered required keys; ranking orders compatible runs and never admits an incompatible one"
+    },
+    "distributions": {
+      "claims": {
+        "latency_distribution": {
+          "ttft_ms": {
+            "kind": "distribution",
+            "unit": "ms",
+            "runs": "5-10",
+            "statistics": {
+              "p50": {
+                "n": "5-10",
+                "min": 20,
+                "p50": 24,
+                "p90": 30,
+                "p95": 30,
+                "p99": 30,
+                "max": 30
+              },
+              "p90": {
+                "n": "5-10",
+                "min": 23,
+                "p50": 27,
+                "p90": 33,
+                "p95": 33,
+                "p99": 33,
+                "max": 33
+              },
+              "p95": {
+                "n": "5-10",
+                "min": 24,
+                "p50": 28,
+                "p90": 34,
+                "p95": 34,
+                "p99": 34,
+                "max": 34
+              },
+              "p99": {
+                "n": "5-10",
+                "min": 25,
+                "p50": 29,
+                "p90": 35,
+                "p95": 35,
+                "p99": 35,
+                "max": 35
+              }
+            }
+          },
+          "total_ms": {
+            "kind": "distribution",
+            "unit": "ms",
+            "runs": "5-10",
+            "statistics": {
+              "p50": {
+                "n": "5-10",
+                "min": 30,
+                "p50": 34,
+                "p90": 40,
+                "p95": 40,
+                "p99": 40,
+                "max": 40
+              },
+              "p90": {
+                "n": "5-10",
+                "min": 33,
+                "p50": 37,
+                "p90": 43,
+                "p95": 43,
+                "p99": 43,
+                "max": 43
+              },
+              "p95": {
+                "n": "5-10",
+                "min": 34,
+                "p50": 38,
+                "p90": 44,
+                "p95": 44,
+                "p99": 44,
+                "max": 44
+              },
+              "p99": {
+                "n": "5-10",
+                "min": 35,
+                "p50": 39,
+                "p90": 45,
+                "p95": 45,
+                "p99": 45,
+                "max": 45
+              }
+            }
+          }
+        },
+        "error_rate": {
+          "error_rate": {
+            "kind": "rate",
+            "runs": "5-10",
+            "values": {
+              "n": "5-10",
+              "min": 0.05,
+              "p50": 0.15,
+              "p90": 0.3,
+              "p95": 0.3,
+              "p99": 0.3,
+              "max": 0.3
+            }
+          }
+        }
+      },
+      "contributors": { "orgs": "3-5", "max_org_share": "<=50%" }
+    },
+    "missingness": {
+      "attempts": {
+        "planned": 120,
+        "attempted": 120,
+        "succeeded": 99,
+        "failed": 21,
+        "excluded": "<11",
+        "unobserved": "<11"
+      },
+      "runs_with_unknown_context": "<5",
+      "runs_below_claim_minimum": { "latency_distribution": "<5", "error_rate": "<5" }
+    },
+    "contradictions": [
+      {
+        "kind": "org_level_iqr_disjoint",
+        "claim": "latency_distribution",
+        "metric": "ttft_ms",
+        "statistic": "p50",
+        "text": "Two contributing organizations report non-overlapping interquartile ranges of per-run ttft_ms p50 under the same matched conditions. Both sets of observations are retained. The evidence does not identify why they differ; a controlled comparison under a registered protocol would."
+      }
+    ],
+    "uncertainty": {
+      "kind": "descriptive",
+      "detail": "Spreads are descriptive nearest-rank percentiles of per-run statistics across 5-10 runs; no confidence interval is computed.",
+      "runs": "5-10",
+      "tail_claims": {
+        "minimum_runs": 20,
+        "supported": false,
+        "statement": "Fewer than 20 runs: p95 and p99 spreads are reported but do not support a tail claim."
+      }
+    },
+    "freshness": { "oldest_received_on": "2026-09-01", "newest_received_on": "2026-09-06" },
+    "limitations": [
+      "<5 runs carry at least one required context field with origin unknown.",
+      "Fewer than 20 runs: tail statistics (p95, p99) do not support a tail claim.",
+      "One run is one protocol execution from one node; attempts inside a run are samples within a run, never independent observations."
+    ],
+    "own_evidence": {
+      "runs": [
+        {
+          "run_id": "01ARZ3NDEKTSV4RRFFQ69G5FAV",
+          "received_at": "2026-09-05T12:00:06Z",
+          "execution_status": "succeeded",
+          "sharing_policy": "cooperative",
+          "compatible": true,
+          "in_cohort": true,
+          "reasons": []
+        },
+        {
+          "run_id": "01ARZ3NDEKTSV4RRFFQ69G5FAW",
+          "received_at": "2026-09-05T12:10:06Z",
+          "execution_status": "succeeded",
+          "sharing_policy": "private",
+          "compatible": false,
+          "in_cohort": false,
+          "reasons": ["private", "fixture"]
+        }
+      ],
+      "compatible": 1,
+      "in_cohort": 1,
+      "note": "Your organization's own runs for this protocol; ids are yours. Nothing here is released to any other organization."
+    }
+  },
+  "issued_at": "2026-09-06T12:30:00Z"
+}

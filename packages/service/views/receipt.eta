@@ -1,0 +1,200 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title><%= it.product %> - receipt <%= it.receipt.receipt_id %></title>
+    <%~ include('_style') %>
+  </head>
+  <body>
+    <header>
+      <h1><%= it.product %></h1>
+      <p class="tagline">Answer receipt for <strong id="org-name"><%= it.org_name %></strong>.</p>
+    </header>
+
+    <%
+      const r = it.receipt;
+      const res = it.result || {};
+      const cohort = r.cohort || {};
+      const filters = cohort.filters || {};
+      const reasons = Array.isArray(r.suppression_reasons) ? r.suppression_reasons : [];
+      const findings = Array.isArray(res.findings) ? res.findings : [];
+      const applicability = res.applicability || null;
+      const distributions = res.distributions || null;
+      const claims = distributions && distributions.claims ? distributions.claims : {};
+      const missingness = res.missingness || null;
+      const contradictions = Array.isArray(res.contradictions) ? res.contradictions : [];
+      const uncertainty = res.uncertainty || null;
+      const freshness = res.freshness || null;
+      const limitations = Array.isArray(res.limitations) ? res.limitations : [];
+      const own = res.own_evidence || null;
+      const stats = ['p50', 'p90', 'p95', 'p99'];
+      const fmt = (v) => (typeof v === 'number' ? (Number.isInteger(v) ? String(v) : v.toFixed(3)) : String(v));
+    %>
+
+    <section aria-labelledby="receipt-heading">
+      <h2 id="receipt-heading">Receipt <code><%= r.receipt_id %></code></h2>
+      <p class="<%= r.status === 'released' ? 'notice' : (r.status === 'stale' ? 'trust' : 'error-box') %>" id="receipt-status">
+        Status: <strong><%= r.status %></strong>.
+        <% if (r.status === 'released') { %>The cooperative released the sections below at evidence revision <%= r.evidence_revision %>.<% } %>
+        <% if (r.status === 'suppressed') { %>Evidence exists but releasing it could expose a contributor; nothing cooperative is shown. Reasons: <%= reasons.join(', ') %>.<% } %>
+        <% if (r.status === 'insufficient_evidence') { %>No member has shared a comparable measurement yet.<% } %>
+        <% if (r.status === 'stale') { %>A later evidence revision touched this protocol; the numbers below no longer describe the current cohort. Query again for a fresh receipt. Nothing here says what changed.<% } %>
+      </p>
+      <dl>
+        <dt>Protocol</dt><dd id="receipt-protocol"><%= cohort.protocol_ref %></dd>
+        <dt>Filters</dt><dd id="receipt-filters"><%= Object.keys(filters).length === 0 ? '(none)' : Object.entries(filters).map(([k, v]) => k + ' = ' + JSON.stringify(v)).join(', ') %></dd>
+        <dt>Organizations</dt><dd id="cohort-orgs"><%= cohort.orgs %></dd>
+        <dt>Runs</dt><dd id="cohort-runs"><%= cohort.runs %></dd>
+        <dt>Evidence revision</dt><dd id="receipt-revision"><%= r.evidence_revision %></dd>
+        <dt>Calculation</dt><dd><%= r.calculation_version %></dd>
+        <dt>Policy</dt><dd><%= r.policy_version %></dd>
+        <dt>Issued</dt><dd><%= r.issued_at %></dd>
+        <dt>Query digest</dt><dd><%= r.query_digest %></dd>
+        <% if (reasons.length > 0) { %><dt>Suppression reasons</dt><dd id="suppression-reasons"><%= reasons.join(', ') %></dd><% } %>
+      </dl>
+    </section>
+
+    <% if (findings.length > 0) { %>
+    <section aria-labelledby="findings-heading" id="findings">
+      <h2 id="findings-heading">Findings</h2>
+      <% findings.forEach(function (f) { %>
+        <article class="finding" id="finding-<%= f.claim %>">
+          <h3><%= f.claim %><% if (f.status) { %> (<%= f.status %>)<% } %></h3>
+          <% if (f.statement) { %><p><%= f.statement %></p><% } %>
+        </article>
+      <% }) %>
+    </section>
+    <% } %>
+
+    <% if (applicability) { %>
+    <section aria-labelledby="applicability-heading" id="applicability">
+      <h2 id="applicability-heading">Applicability</h2>
+      <dl>
+        <dt>Filters applied</dt><dd><%= (applicability.filters_applied || []).join(', ') || '(none)' %></dd>
+        <dt>Unfiltered required context</dt><dd><%= (applicability.unfiltered_required_context || []).join(', ') || '(none)' %></dd>
+        <% Object.entries(applicability.context_known || {}).forEach(function ([key, band]) { %>
+          <dt>Runs knowing <code><%= key %></code></dt><dd><%= band %></dd>
+        <% }) %>
+        <% if (applicability.ranking) { %><dt>Ranking</dt><dd><%= applicability.ranking %></dd><% } %>
+      </dl>
+    </section>
+    <% } %>
+
+    <% if (distributions) { %>
+    <section aria-labelledby="distributions-heading" id="distributions">
+      <h2 id="distributions-heading">Distributions (spread across runs; every count a band)</h2>
+      <% if (distributions.contributors) { %>
+        <p>Contributors: <span id="contributor-orgs"><%= distributions.contributors.orgs %></span> organizations, largest share <span id="max-org-share"><%= distributions.contributors.max_org_share %></span>.</p>
+      <% } %>
+      <% Object.entries(claims).forEach(function ([claim, metrics]) { %>
+        <h3><%= claim %></h3>
+        <% Object.entries(metrics).forEach(function ([name, m]) { %>
+          <p><strong><%= name %></strong><% if (m.unit) { %> (<%= m.unit %>)<% } %>, <%= m.kind %>, <%= m.runs %> runs</p>
+          <% if (m.statistics) { %>
+          <table class="spread">
+            <thead><tr><th>per-run statistic</th><th>n</th><th>min</th><th>p50</th><th>p90</th><th>p95</th><th>p99</th><th>max</th></tr></thead>
+            <tbody>
+              <% stats.forEach(function (stat) { const s = m.statistics[stat]; if (!s) return; %>
+                <tr><td><%= stat %></td><td><%= s.n %></td><td><%= fmt(s.min) %></td><td><%= fmt(s.p50) %></td><td><%= fmt(s.p90) %></td><td><%= fmt(s.p95) %></td><td><%= fmt(s.p99) %></td><td><%= fmt(s.max) %></td></tr>
+              <% }) %>
+            </tbody>
+          </table>
+          <% } %>
+          <% if (m.values) { const s = m.values; %>
+          <table class="spread">
+            <thead><tr><th>n</th><th>min</th><th>p50</th><th>p90</th><th>p95</th><th>p99</th><th>max</th></tr></thead>
+            <tbody><tr><td><%= s.n %></td><td><%= fmt(s.min) %></td><td><%= fmt(s.p50) %></td><td><%= fmt(s.p90) %></td><td><%= fmt(s.p95) %></td><td><%= fmt(s.p99) %></td><td><%= fmt(s.max) %></td></tr></tbody>
+          </table>
+          <% } %>
+        <% }) %>
+      <% }) %>
+    </section>
+    <% } %>
+
+    <% if (missingness) { %>
+    <section aria-labelledby="missingness-heading" id="missingness">
+      <h2 id="missingness-heading">Missing-data accounting</h2>
+      <dl>
+        <% if (missingness.attempts) { Object.entries(missingness.attempts).forEach(function ([k, v]) { %>
+          <dt>Attempts <%= k %></dt><dd><%= v %></dd>
+        <% }) } %>
+        <% if (missingness.runs_with_unknown_context !== undefined) { %><dt>Runs with unknown required context</dt><dd><%= missingness.runs_with_unknown_context %></dd><% } %>
+        <% Object.entries(missingness.runs_below_claim_minimum || {}).forEach(function ([claim, band]) { %>
+          <dt>Runs below the <code><%= claim %></code> minimum</dt><dd><%= band %></dd>
+        <% }) %>
+      </dl>
+    </section>
+    <% } %>
+
+    <% if (res.contradictions !== undefined) { %>
+    <section aria-labelledby="contradictions-heading" id="contradictions">
+      <h2 id="contradictions-heading">Contradictions</h2>
+      <% if (contradictions.length === 0) { %>
+        <p class="muted" id="no-contradictions">No contributing organizations disagree on a released statistic.</p>
+      <% } %>
+      <% contradictions.forEach(function (c, i) { %>
+        <p class="trust" id="contradiction-<%= i %>"><strong><%= c.claim %> / <%= c.metric %> <%= c.statistic %></strong>: <%= c.text %></p>
+      <% }) %>
+    </section>
+    <% } %>
+
+    <% if (uncertainty) { %>
+    <section aria-labelledby="uncertainty-heading" id="uncertainty">
+      <h2 id="uncertainty-heading">Uncertainty</h2>
+      <% if (uncertainty.detail) { %><p><%= uncertainty.detail %></p><% } %>
+      <% if (uncertainty.tail_claims) { %><p id="tail-claims">Tail claims (minimum <%= uncertainty.tail_claims.minimum_runs %> runs): <%= uncertainty.tail_claims.supported ? 'supported' : 'not supported' %>. <%= uncertainty.tail_claims.statement %></p><% } %>
+    </section>
+    <% } %>
+
+    <% if (freshness) { %>
+    <section aria-labelledby="freshness-heading" id="freshness">
+      <h2 id="freshness-heading">Freshness</h2>
+      <dl>
+        <% if (freshness.oldest_received_on) { %><dt>Oldest run received</dt><dd><%= freshness.oldest_received_on %></dd><% } %>
+        <% if (freshness.newest_received_on) { %><dt>Newest run received</dt><dd><%= freshness.newest_received_on %></dd><% } %>
+        <% if (freshness.newest_run_at) { %><dt>Newest run</dt><dd><%= freshness.newest_run_at %></dd><% } %>
+      </dl>
+    </section>
+    <% } %>
+
+    <% if (limitations.length > 0) { %>
+    <section aria-labelledby="limitations-heading" id="limitations">
+      <h2 id="limitations-heading">Limitations</h2>
+      <ul><% limitations.forEach(function (l) { %><li><%= l %></li><% }) %></ul>
+    </section>
+    <% } %>
+
+    <section aria-labelledby="own-heading" id="own-evidence">
+      <h2 id="own-heading">Your own evidence</h2>
+      <% if (!own) { %>
+        <p class="muted" id="no-own-evidence">Your organization has no runs for this protocol.</p>
+      <% } else { %>
+        <p class="muted"><%= own.note %> Compatible with this query: <span id="own-compatible"><%= own.compatible %></span>; in the cohort: <span id="own-in-cohort"><%= own.in_cohort %></span>.</p>
+        <table id="own-runs">
+          <thead><tr><th>Run id</th><th>Received</th><th>Status</th><th>Sharing</th><th>Compatible</th><th>In cohort</th><th>Why not</th></tr></thead>
+          <tbody>
+            <% own.runs.forEach(function (run) { %>
+              <tr id="own-run-<%= run.run_id %>">
+                <td class="mono"><%= run.run_id %></td>
+                <td><%= run.received_at %></td>
+                <td><%= run.execution_status %></td>
+                <td><%= run.sharing_policy %></td>
+                <td><%= run.compatible ? 'yes' : 'no' %></td>
+                <td><%= run.in_cohort ? 'yes' : 'no' %></td>
+                <td><%= run.reasons.join(', ') %></td>
+              </tr>
+            <% }) %>
+          </tbody>
+        </table>
+      <% } %>
+    </section>
+
+    <section aria-labelledby="json-heading">
+      <h2 id="json-heading">Receipt as JSON</h2>
+      <pre id="receipt-json"><%= it.json %></pre>
+    </section>
+
+    <footer><a href="/">Console home</a>. Member API: <code>GET /v1/receipts/<%= r.receipt_id %></code>.</footer>
+  </body>
+</html>

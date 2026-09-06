@@ -515,9 +515,19 @@ export function buildOpenApi(): Record<string, unknown> {
       '/v1/evidence/query': {
         post: {
           summary:
-            'Compatible-cohort evidence query (stage 5 stub): validates the request and answers an AnswerReceipt with status insufficient_evidence and reason no_cooperative_evidence until aggregation lands',
+            'Compatible-cohort evidence query: a released, suppressed, or insufficient AnswerReceipt (stage 9 behind IWIK_FEATURE_COOPERATIVE_QUERY; the stage 5 stub answer otherwise)',
           description:
-            'No matching or aggregation exists yet; the receipt is persisted (kind query) and re-readable through GET /v1/receipts/{id}.',
+            'With IWIK_FEATURE_COOPERATIVE_QUERY=on: candidates are accepted, cooperative, non-withdrawn, non-fixture, ' +
+            'non-duplicate runs of the protocol executed with a compatible harness digest whose indexed required ' +
+            'context matches every context_filters key exactly (a filter key outside required_context is 422 ' +
+            'not_indexed); as_of_revision pins the cohort at an earlier evidence revision (422 maximum when above ' +
+            'the current one). Policy 2026-09-p1 releases only with at least 3 organizations, 5 runs, no ' +
+            'organization above 50 % of the runs, and no prior release of the protocol whose member set differs by ' +
+            'fewer than 3 organizations (differencing). Counts are bands; result sections are typed additively in ' +
+            'the AnswerReceipt schema; result.own_evidence lists the caller’s own runs (their ids) even when the ' +
+            'cooperative cohort is suppressed. Off (the default): status insufficient_evidence with reason ' +
+            'no_cooperative_evidence. Either way the receipt is persisted (kind query) and re-readable through ' +
+            'GET /v1/receipts/{id}, where it reads stale once a later revision touched its protocol.',
           security: bearer,
           'x-scope': 'query',
           requestBody: {

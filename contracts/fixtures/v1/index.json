@@ -22,10 +22,21 @@
     },
     { "file": "receipt.valid.json", "entity": "AnswerReceipt", "valid": true },
     {
+      "file": "receipt.released-latency-v1.valid.json",
+      "entity": "AnswerReceipt",
+      "valid": true
+    },
+    {
       "file": "receipt.leaks-other-org-run.json",
       "entity": "AnswerReceipt",
       "valid": false,
       "expect": [{ "path": "", "rule": "additionalProperties" }]
+    },
+    {
+      "file": "receipt.leaks-run-in-contradiction.json",
+      "entity": "AnswerReceipt",
+      "valid": false,
+      "expect": [{ "path": "/result/contradictions/0", "rule": "additionalProperties" }]
     }
   ]
 }

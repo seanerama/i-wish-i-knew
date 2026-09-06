@@ -25,13 +25,20 @@ This document is guidance; the tools enforce the rules.
 An `AnswerReceipt` says what the cooperative is willing to release and no
 more. Read these fields before quoting any number:
 
-- **applicability**: how many required context keys matched. A partial match
-  means the cohort resembles the user's situation; it is not the user's
-  situation. Say which keys did not match.
+- **applicability**: which required context keys were filtered exactly
+  (`filters_applied`) and which the cohort varies across
+  (`unfiltered_required_context`, with how many runs know each value). A
+  partial match means the cohort resembles the user's situation; it is not
+  the user's situation. Say which keys were not filtered.
 - **cohort**: `orgs` and `runs` are ranges, never exact counts below the
-  threshold. "3-5 organizations, 6-10 runs" is small evidence; say so.
-- **uncertainty**: the spread across contributing runs. Quote the spread, not
-  a single pooled number. If `uncertainty.kind` is `range`, the answer is a
+  threshold. "3-5 organizations, 5-10 runs" is small evidence; say so.
+- **distributions**: per claim and metric, the spread of a per-run statistic
+  across the contributing runs (nearest-rank min/p50/p90/p95/p99/max, with
+  `n` as a band). Quote the spread, not a single pooled number. A `withheld`
+  finding means that claim alone did not meet the release policy.
+- **uncertainty**: `descriptive` means no confidence interval was computed;
+  `tail_claims.supported` says whether p95/p99 may be quoted as a tail claim
+  (they need 20 runs). If `uncertainty.kind` is `range`, the answer is a
   range.
 - **freshness**: `newest_run_at` and `evidence_revision`. Old evidence about a
   fast-moving service may be stale; `status: "stale"` on re-read means the
@@ -39,10 +46,17 @@ more. Read these fields before quoting any number:
   longer be quoted.
 - **missingness** and **limitations**: what the contributors did not know and
   what the calculation excluded. Carry these into your answer.
-- **contradictions**: runs that disagree are listed, not averaged away.
+- **contradictions**: organizations whose runs disagree (non-overlapping
+  interquartile ranges) are listed, not averaged away. The text never says
+  why; neither may you. Offer a controlled test instead of a cause.
+- **own_evidence**: your organization's own runs for the protocol, with
+  whether each is compatible with the query and, if not, why (`private`,
+  `fixture`, `withdrawn`, `filter_mismatch`, ...). These ids are yours; they
+  are shown even when the cooperative cohort is suppressed.
 
 A receipt never names another organization's run, node, or org; do not try to
-infer who contributed.
+infer who contributed. `iwik report --cooperative --protocol <ref>
+--context k=v` renders the same receipt for the operator.
 
 ## When to propose a test
 
@@ -86,11 +100,14 @@ milestone 0.3 stage 10; do not promise them.
 
 - `insufficient_evidence` with `no_cooperative_evidence`: "No member has shared
   a comparable measurement yet." Offer the local test path above.
-- `suppressed` with `min_orgs`, `concentration`, or `differencing`: "Evidence
-  exists but releasing it could expose a contributor." Explain that fewer than
-  three organizations, one organization dominating, or a query that differs
-  too little from a prior release are all withheld by design. Broadening the
-  context filters may help; narrowing them will not.
+- `suppressed` with `min_orgs`, `min_runs`, `concentration`, or
+  `differencing`: "Evidence exists but releasing it could expose a
+  contributor." Explain that fewer than three organizations, fewer than five
+  runs, one organization dominating, or a query that differs too little from
+  a prior release are all withheld by design. Broadening the context filters
+  or waiting for more contributors may help; narrowing them will not.
+- `suppressed` with `cohort_too_large`: more compatible runs exist than one
+  answer computes over; add a required-context filter and query again.
 - `stale`: the previously released number no longer reflects the cohort;
   re-query for a fresh receipt before quoting it again.
 

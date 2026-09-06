@@ -27,6 +27,8 @@
         <dd id="withdrawal-state"><%= it.withdrawal_enabled ? 'enabled' : 'disabled (IWIK_FEATURE_WITHDRAWAL=off)' %></dd>
         <dt>Dedupe</dt>
         <dd id="dedupe-state"><%= it.dedupe_enabled ? 'enabled' : 'disabled (IWIK_FEATURE_DEDUPE=off)' %></dd>
+        <dt>Cooperative query</dt>
+        <dd id="cooperative-query-state"><%= it.cooperative_query_enabled ? 'enabled' : 'disabled (IWIK_FEATURE_COOPERATIVE_QUERY=off)' %></dd>
         <dt>Accepted protocols</dt>
         <dd id="protocols"><%= it.protocols.length === 0 ? '(none)' : it.protocols.join(', ') %></dd>
       </dl>

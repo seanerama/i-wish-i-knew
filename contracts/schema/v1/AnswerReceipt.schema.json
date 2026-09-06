@@ -102,21 +102,546 @@
       "properties": {
         "findings": {
           "type": "array",
-          "items": {}
+          "items": {
+            "additionalProperties": true,
+            "type": "object",
+            "required": [
+              "claim"
+            ],
+            "properties": {
+              "claim": {
+                "minLength": 1,
+                "type": "string"
+              },
+              "status": {
+                "type": "string",
+                "enum": [
+                  "released",
+                  "withheld"
+                ]
+              },
+              "statement": {
+                "type": "string"
+              },
+              "metrics": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "reasons": {
+                "type": "array",
+                "items": {
+                  "type": "string",
+                  "enum": [
+                    "min_orgs",
+                    "concentration",
+                    "differencing",
+                    "no_cooperative_evidence",
+                    "min_runs",
+                    "cohort_too_large"
+                  ]
+                }
+              }
+            }
+          }
         },
-        "applicability": {},
-        "distributions": {},
-        "missingness": {},
+        "applicability": {
+          "additionalProperties": true,
+          "type": "object",
+          "properties": {
+            "filters_applied": {
+              "type": "array",
+              "items": {
+                "pattern": "^[a-z][a-z0-9_]*(\\.[a-z][a-z0-9_]*)*$",
+                "description": "Dotted lowercase context key",
+                "type": "string"
+              }
+            },
+            "unfiltered_required_context": {
+              "type": "array",
+              "items": {
+                "pattern": "^[a-z][a-z0-9_]*(\\.[a-z][a-z0-9_]*)*$",
+                "description": "Dotted lowercase context key",
+                "type": "string"
+              }
+            },
+            "context_known": {
+              "type": "object",
+              "patternProperties": {
+                "^(.*)$": {
+                  "pattern": "^(<[0-9]+|[0-9]+-[0-9]+|[0-9]+\\+)$",
+                  "description": "Count band, e.g. `3-5`, `<3`, `10+`",
+                  "type": "string"
+                }
+              }
+            },
+            "ranking": {
+              "type": "string"
+            }
+          }
+        },
+        "distributions": {
+          "additionalProperties": true,
+          "type": "object",
+          "properties": {
+            "claims": {
+              "type": "object",
+              "patternProperties": {
+                "^(.*)$": {
+                  "type": "object",
+                  "patternProperties": {
+                    "^(.*)$": {
+                      "additionalProperties": false,
+                      "type": "object",
+                      "required": [
+                        "kind",
+                        "runs"
+                      ],
+                      "properties": {
+                        "kind": {
+                          "type": "string",
+                          "enum": [
+                            "distribution",
+                            "rate"
+                          ]
+                        },
+                        "unit": {
+                          "type": "string"
+                        },
+                        "runs": {
+                          "pattern": "^(<[0-9]+|[0-9]+-[0-9]+|[0-9]+\\+)$",
+                          "description": "Count band, e.g. `3-5`, `<3`, `10+`",
+                          "type": "string"
+                        },
+                        "statistics": {
+                          "type": "object",
+                          "patternProperties": {
+                            "^(.*)$": {
+                              "additionalProperties": false,
+                              "description": "Nearest-rank spread of a per-run value across runs",
+                              "type": "object",
+                              "required": [
+                                "n",
+                                "min",
+                                "p50",
+                                "p90",
+                                "p95",
+                                "p99",
+                                "max"
+                              ],
+                              "properties": {
+                                "n": {
+                                  "pattern": "^(<[0-9]+|[0-9]+-[0-9]+|[0-9]+\\+)$",
+                                  "description": "Count band, e.g. `3-5`, `<3`, `10+`",
+                                  "type": "string"
+                                },
+                                "min": {
+                                  "type": "number"
+                                },
+                                "p50": {
+                                  "type": "number"
+                                },
+                                "p90": {
+                                  "type": "number"
+                                },
+                                "p95": {
+                                  "type": "number"
+                                },
+                                "p99": {
+                                  "type": "number"
+                                },
+                                "max": {
+                                  "type": "number"
+                                }
+                              }
+                            }
+                          }
+                        },
+                        "values": {
+                          "additionalProperties": false,
+                          "description": "Nearest-rank spread of a per-run value across runs",
+                          "type": "object",
+                          "required": [
+                            "n",
+                            "min",
+                            "p50",
+                            "p90",
+                            "p95",
+                            "p99",
+                            "max"
+                          ],
+                          "properties": {
+                            "n": {
+                              "pattern": "^(<[0-9]+|[0-9]+-[0-9]+|[0-9]+\\+)$",
+                              "description": "Count band, e.g. `3-5`, `<3`, `10+`",
+                              "type": "string"
+                            },
+                            "min": {
+                              "type": "number"
+                            },
+                            "p50": {
+                              "type": "number"
+                            },
+                            "p90": {
+                              "type": "number"
+                            },
+                            "p95": {
+                              "type": "number"
+                            },
+                            "p99": {
+                              "type": "number"
+                            },
+                            "max": {
+                              "type": "number"
+                            }
+                          }
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            },
+            "contributors": {
+              "additionalProperties": false,
+              "type": "object",
+              "required": [
+                "orgs",
+                "max_org_share"
+              ],
+              "properties": {
+                "orgs": {
+                  "pattern": "^(<[0-9]+|[0-9]+-[0-9]+|[0-9]+\\+)$",
+                  "description": "Count band, e.g. `3-5`, `<3`, `10+`",
+                  "type": "string"
+                },
+                "max_org_share": {
+                  "type": "string",
+                  "enum": [
+                    "<=50%",
+                    ">50%"
+                  ]
+                }
+              }
+            }
+          }
+        },
+        "missingness": {
+          "additionalProperties": true,
+          "type": "object",
+          "properties": {
+            "attempts": {
+              "additionalProperties": false,
+              "description": "Sums of Run.accounting across the cohort",
+              "type": "object",
+              "required": [
+                "planned",
+                "attempted",
+                "succeeded",
+                "failed",
+                "excluded",
+                "unobserved"
+              ],
+              "properties": {
+                "planned": {
+                  "description": "Exact at 11 or more, otherwise a count band",
+                  "anyOf": [
+                    {
+                      "minimum": 11,
+                      "type": "integer"
+                    },
+                    {
+                      "pattern": "^(<[0-9]+|[0-9]+-[0-9]+|[0-9]+\\+)$",
+                      "description": "Count band, e.g. `3-5`, `<3`, `10+`",
+                      "type": "string"
+                    }
+                  ]
+                },
+                "attempted": {
+                  "description": "Exact at 11 or more, otherwise a count band",
+                  "anyOf": [
+                    {
+                      "minimum": 11,
+                      "type": "integer"
+                    },
+                    {
+                      "pattern": "^(<[0-9]+|[0-9]+-[0-9]+|[0-9]+\\+)$",
+                      "description": "Count band, e.g. `3-5`, `<3`, `10+`",
+                      "type": "string"
+                    }
+                  ]
+                },
+                "succeeded": {
+                  "description": "Exact at 11 or more, otherwise a count band",
+                  "anyOf": [
+                    {
+                      "minimum": 11,
+                      "type": "integer"
+                    },
+                    {
+                      "pattern": "^(<[0-9]+|[0-9]+-[0-9]+|[0-9]+\\+)$",
+                      "description": "Count band, e.g. `3-5`, `<3`, `10+`",
+                      "type": "string"
+                    }
+                  ]
+                },
+                "failed": {
+                  "description": "Exact at 11 or more, otherwise a count band",
+                  "anyOf": [
+                    {
+                      "minimum": 11,
+                      "type": "integer"
+                    },
+                    {
+                      "pattern": "^(<[0-9]+|[0-9]+-[0-9]+|[0-9]+\\+)$",
+                      "description": "Count band, e.g. `3-5`, `<3`, `10+`",
+                      "type": "string"
+                    }
+                  ]
+                },
+                "excluded": {
+                  "description": "Exact at 11 or more, otherwise a count band",
+                  "anyOf": [
+                    {
+                      "minimum": 11,
+                      "type": "integer"
+                    },
+                    {
+                      "pattern": "^(<[0-9]+|[0-9]+-[0-9]+|[0-9]+\\+)$",
+                      "description": "Count band, e.g. `3-5`, `<3`, `10+`",
+                      "type": "string"
+                    }
+                  ]
+                },
+                "unobserved": {
+                  "description": "Exact at 11 or more, otherwise a count band",
+                  "anyOf": [
+                    {
+                      "minimum": 11,
+                      "type": "integer"
+                    },
+                    {
+                      "pattern": "^(<[0-9]+|[0-9]+-[0-9]+|[0-9]+\\+)$",
+                      "description": "Count band, e.g. `3-5`, `<3`, `10+`",
+                      "type": "string"
+                    }
+                  ]
+                }
+              }
+            },
+            "runs_with_unknown_context": {
+              "pattern": "^(<[0-9]+|[0-9]+-[0-9]+|[0-9]+\\+)$",
+              "description": "Count band, e.g. `3-5`, `<3`, `10+`",
+              "type": "string"
+            },
+            "runs_below_claim_minimum": {
+              "type": "object",
+              "patternProperties": {
+                "^(.*)$": {
+                  "pattern": "^(<[0-9]+|[0-9]+-[0-9]+|[0-9]+\\+)$",
+                  "description": "Count band, e.g. `3-5`, `<3`, `10+`",
+                  "type": "string"
+                }
+              }
+            }
+          }
+        },
         "contradictions": {
           "type": "array",
-          "items": {}
+          "items": {
+            "additionalProperties": false,
+            "type": "object",
+            "required": [
+              "kind",
+              "claim",
+              "metric",
+              "statistic",
+              "text"
+            ],
+            "properties": {
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "org_level_iqr_disjoint"
+                ]
+              },
+              "claim": {
+                "minLength": 1,
+                "type": "string"
+              },
+              "metric": {
+                "minLength": 1,
+                "type": "string"
+              },
+              "statistic": {
+                "minLength": 1,
+                "type": "string"
+              },
+              "text": {
+                "minLength": 1,
+                "type": "string"
+              }
+            }
+          }
         },
-        "uncertainty": {},
-        "freshness": {},
+        "uncertainty": {
+          "additionalProperties": true,
+          "type": "object",
+          "properties": {
+            "kind": {
+              "type": "string",
+              "enum": [
+                "descriptive",
+                "range"
+              ]
+            },
+            "detail": {
+              "type": "string"
+            },
+            "runs": {
+              "pattern": "^(<[0-9]+|[0-9]+-[0-9]+|[0-9]+\\+)$",
+              "description": "Count band, e.g. `3-5`, `<3`, `10+`",
+              "type": "string"
+            },
+            "tail_claims": {
+              "additionalProperties": false,
+              "type": "object",
+              "required": [
+                "minimum_runs",
+                "supported",
+                "statement"
+              ],
+              "properties": {
+                "minimum_runs": {
+                  "minimum": 0,
+                  "type": "integer"
+                },
+                "supported": {
+                  "type": "boolean"
+                },
+                "statement": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        },
+        "freshness": {
+          "additionalProperties": true,
+          "type": "object",
+          "properties": {
+            "newest_run_at": {
+              "format": "date-time",
+              "description": "RFC 3339 UTC timestamp",
+              "type": "string"
+            },
+            "oldest_received_on": {
+              "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}$",
+              "type": "string"
+            },
+            "newest_received_on": {
+              "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}$",
+              "type": "string"
+            }
+          }
+        },
         "limitations": {
           "type": "array",
           "items": {
             "type": "string"
+          }
+        },
+        "own_evidence": {
+          "additionalProperties": false,
+          "type": "object",
+          "required": [
+            "runs",
+            "compatible",
+            "in_cohort",
+            "note"
+          ],
+          "properties": {
+            "runs": {
+              "type": "array",
+              "items": {
+                "additionalProperties": false,
+                "type": "object",
+                "required": [
+                  "run_id",
+                  "received_at",
+                  "execution_status",
+                  "sharing_policy",
+                  "compatible",
+                  "in_cohort",
+                  "reasons"
+                ],
+                "properties": {
+                  "run_id": {
+                    "pattern": "^[0-9A-HJKMNP-TV-Z]{26}$",
+                    "description": "ULID identifier",
+                    "type": "string"
+                  },
+                  "received_at": {
+                    "format": "date-time",
+                    "description": "RFC 3339 UTC timestamp",
+                    "type": "string"
+                  },
+                  "execution_status": {
+                    "type": "string",
+                    "enum": [
+                      "attempted",
+                      "succeeded",
+                      "failed",
+                      "excluded",
+                      "unobserved"
+                    ],
+                    "description": "`unobserved` means the collector or target was unreachable; it is never a product failure"
+                  },
+                  "sharing_policy": {
+                    "type": "string",
+                    "enum": [
+                      "private",
+                      "cooperative"
+                    ]
+                  },
+                  "compatible": {
+                    "type": "boolean"
+                  },
+                  "in_cohort": {
+                    "type": "boolean"
+                  },
+                  "reasons": {
+                    "type": "array",
+                    "items": {
+                      "type": "string",
+                      "enum": [
+                        "fixture",
+                        "private",
+                        "withdrawn",
+                        "duplicate",
+                        "harness_incompatible",
+                        "filter_mismatch",
+                        "after_as_of",
+                        "status_not_countable",
+                        "not_indexed"
+                      ]
+                    }
+                  }
+                }
+              }
+            },
+            "compatible": {
+              "minimum": 0,
+              "type": "integer"
+            },
+            "in_cohort": {
+              "minimum": 0,
+              "type": "integer"
+            },
+            "note": {
+              "type": "string"
+            }
           }
         }
       }
@@ -129,7 +654,9 @@
           "min_orgs",
           "concentration",
           "differencing",
-          "no_cooperative_evidence"
+          "no_cooperative_evidence",
+          "min_runs",
+          "cohort_too_large"
         ]
       }
     },
