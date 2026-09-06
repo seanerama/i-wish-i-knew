@@ -15,6 +15,7 @@ FROM node:22-alpine@sha256:c610fcdfb1d5b4740dd70c284ed3cb16bb857e0f7166196e36a55
 WORKDIR /app
 COPY package.json package-lock.json .npmrc tsconfig.base.json ./
 COPY packages/contracts/package.json packages/contracts/package.json
+COPY packages/runner/package.json packages/runner/package.json
 COPY packages/service/package.json packages/service/package.json
 RUN npm ci
 COPY packages/contracts packages/contracts
@@ -26,6 +27,9 @@ ENV NODE_ENV=production
 WORKDIR /app
 COPY package.json package-lock.json .npmrc ./
 COPY packages/contracts/package.json packages/contracts/package.json
+# The runner (`iwik`) is a member-side package and is not shipped in this
+# image; its package.json is present only so the workspace lockfile resolves.
+COPY packages/runner/package.json packages/runner/package.json
 COPY packages/service/package.json packages/service/package.json
 RUN npm ci --omit=dev && npm cache clean --force
 COPY --from=build /app/packages/contracts/dist packages/contracts/dist

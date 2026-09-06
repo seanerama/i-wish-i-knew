@@ -1,32 +1,92 @@
-// The stage-2 spine against a real PostgreSQL: preview -> submit -> receipt,
-// idempotency, preview binding, signature, sanitization, accounting, registry
-// checks, organization isolation, and the error-envelope no-echo rule.
+// The spine against a real PostgreSQL. Stage 2 half: preview -> submit ->
+// receipt, idempotency, preview binding, signature, sanitization, accounting,
+// registry checks, organization isolation, and the error-envelope no-echo
+// rule, driven with fixture runs. Stage 3 half: the full walking skeleton of
+// docs/walking-skeleton.md, driven by the runner (`@iwik/runner`) against the
+// stub target and this service over a real socket.
 import assert from 'node:assert/strict';
+import { mkdtempSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs';
+import { createRequire } from 'node:module';
+import { tmpdir } from 'node:os';
+import { join, resolve } from 'node:path';
 import { after, before, test } from 'node:test';
 import type { Run } from '@iwik/contracts';
+import { validate } from '@iwik/contracts';
+import {
+  ApiError,
+  homePaths,
+  init as runnerInit,
+  loadKey,
+  preview as runnerPreview,
+  receipt as runnerReceipt,
+  run as runnerRun,
+  RunnerError,
+  savePolicy,
+  submit as runnerSubmit,
+  vaultPaths,
+} from '@iwik/runner';
+import type { RunDraft } from '@iwik/runner';
 import { createNode, createOrganization, issueToken } from '../src/modules/identity/index.js';
 import { contentDigest } from '../src/modules/intake/index.js';
 import {
   assertNoEcho,
   authHeader,
   bootApp,
+  browse,
+  CookieJar,
   generateNodeKey,
   prepareRun,
   preview,
+  repoRoot,
+  SEED_NODE_ID,
+  postForm,
+  SEED_NODE_TOKEN,
   signRun,
   submit,
   submitRun,
 } from './helpers.js';
 import type { TestApp } from './helpers.js';
 
+const require = createRequire(import.meta.url);
+interface StubHandle {
+  url: string;
+  port: number;
+  stub: { stats: { errors: number; completions: number } };
+  close: () => Promise<void>;
+}
+const { startStub } = require(
+  resolve(repoRoot, 'packs', 'inference-api', 'fixtures', 'stub-server', 'index.js'),
+) as { startStub: (options: Record<string, unknown>) => Promise<StubHandle> };
+
 let t: TestApp;
+let tempBase: string;
+let runnerHome: string;
+let stub: StubHandle;
 
 before(async () => {
-  t = await bootApp();
+  // The runner's signing key is the seeded node's key: create the home first,
+  // boot the service with its public key, then point the home at the socket.
+  tempBase = mkdtempSync(join(tmpdir(), 'iwik-spine-'));
+  runnerHome = join(tempBase, 'home');
+  const tokenFile = join(tempBase, 'token.txt');
+  writeFileSync(tokenFile, SEED_NODE_TOKEN + '\n', { mode: 0o600 });
+  runnerInit({
+    home: runnerHome,
+    serviceUrl: 'http://127.0.0.1:1',
+    tokenFile,
+    nodeId: SEED_NODE_ID,
+  });
+  const key = loadKey(homePaths(runnerHome).key);
+  t = await bootApp({ nodeKey: { privateKey: key.privateKey, pubkey: key.pubkey } });
+  const serviceUrl = await t.app.listen({ port: 0, host: '127.0.0.1' });
+  runnerInit({ home: runnerHome, serviceUrl });
+  stub = await startStub({ delayMs: 20, errorRate: 0.1, seed: 1 });
 });
 
 after(async () => {
+  await stub.close();
   await t.app.close();
+  rmSync(tempBase, { recursive: true, force: true });
 });
 
 function clone<T>(value: T): T {
@@ -294,6 +354,131 @@ test('spine: preview -> 201 -> 200 same receipt -> 409 preview_mismatch -> 401 -
   const unknownPreview = await submit(t, '01ARZ3NDEKTSV4RRFFQ69G5PRV', signed);
   assert.equal(unknownPreview.statusCode, 404);
   assert.equal(unknownPreview.json<{ error: { code: string } }>().error.code, 'preview_not_found');
+});
+
+test('walking skeleton: stub -> iwik run -> vault -> preview -> submit 201 -> 200 -> tamper 409 -> secret 422', async () => {
+  const revisionBefore = Number(
+    /id="evidence-revision">(\d+)</.exec(
+      (await t.app.inject({ method: 'GET', url: '/' })).body,
+    )?.[1],
+  );
+  const protocol = 'inference-api/latency@1';
+
+  // Execution is off by default; the operator turns it on for this target only.
+  await assert.rejects(
+    runnerRun({ home: runnerHome, protocol, target: stub.url, planned: 20 }),
+    (e: unknown) => e instanceof RunnerError && e.code === 'policy_denied',
+  );
+  savePolicy(runnerHome, {
+    allow_execution: true,
+    allowed_targets: [`127.0.0.1:${stub.port}`],
+    budget_per_plan_usd: 0,
+    allow_disruptive: false,
+  });
+
+  // 3. the runner, programmatically, against the stub, verifying the pack against this registry
+  const errorsBefore = stub.stub.stats.errors;
+  const result = await runnerRun({
+    home: runnerHome,
+    protocol,
+    target: stub.url,
+    planned: 20,
+    targetKind: 'fixture',
+    sharingPolicy: 'cooperative',
+    context: [
+      'model.requested=stub-model',
+      'concurrency=1',
+      'cache_disabled=true',
+      'client_region=local',
+    ],
+  });
+
+  // 4. the vault holds the run with honest accounting
+  assert.equal(result.execution_status, 'succeeded', result.exclusion_reason);
+  assert.equal(result.accounting.planned, 20);
+  assert.equal(result.accounting.attempted, 20);
+  assert.equal(result.accounting.failed, stub.stub.stats.errors - errorsBefore);
+  assert.ok(result.accounting.failed > 0, 'seed 1 at 10 % should inject at least one error in 20');
+  assert.equal(result.accounting.succeeded + result.accounting.failed, 20);
+  const paths = vaultPaths(runnerHome, result.run_id);
+  assert.equal(statSync(paths.dir).mode & 0o777, 0o700);
+  for (const name of readdirSync(paths.dir)) {
+    const full = join(paths.dir, name);
+    if (statSync(full).isFile()) assert.equal(statSync(full).mode & 0o777, 0o600, name);
+  }
+  const draft = JSON.parse(readFileSync(paths.draft, 'utf8')) as RunDraft;
+  assert.equal(draft.execution_status, 'succeeded');
+  assert.equal(draft.accounting.attempted, 20);
+  assert.equal(draft.node_id, SEED_NODE_ID);
+  assert.equal(draft.target.label, stub.url);
+  assert.equal(draft.context.find((f) => f.key === 'model.reported')?.origin, 'measured');
+  assert.equal(readFileSync(paths.attempts, 'utf8').split('\n').filter(Boolean).length, 20);
+  assert.ok(!readFileSync(paths.input, 'utf8').includes('api_key'));
+
+  // 5. preview, then submit: 201 with a receipt id
+  const previewed = await runnerPreview(result.run_id, { home: runnerHome });
+  assert.match(previewed.preview_id, /^[0-9A-HJKMNP-TV-Z]{26}$/);
+  assert.equal(previewed.content_digest, contentDigest(previewed.body.run));
+  assert.equal(validate('Run', previewed.body.run).ok, true);
+  assert.ok(!('label' in previewed.body.run.target));
+  assert.ok(!('org_ref' in previewed.body.run));
+  assert.equal(previewed.body.run.submission.sharing_policy, 'cooperative');
+  // fixture target => stored private regardless of the requested policy
+  assert.equal((previewed.would_store as { sharing_policy: string }).sharing_policy, 'private');
+  const first = await runnerSubmit(result.run_id, { home: runnerHome });
+  assert.equal(first.status, 201);
+  assert.equal(first.receipt['run_id'], result.run_id);
+  assert.equal(first.receipt['status'], 'accepted');
+  assert.match(String(first.receipt['receipt_id']), /^[0-9A-HJKMNP-TV-Z]{26}$/);
+  assert.deepEqual(JSON.parse(readFileSync(paths.receipt, 'utf8')), first.receipt);
+
+  // 6. the identical body again: 200 and the same receipt
+  const second = await runnerSubmit(result.run_id, { home: runnerHome });
+  assert.equal(second.status, 200);
+  assert.deepEqual(second.receipt, first.receipt);
+  const fetched = await runnerReceipt(String(first.receipt['receipt_id']), { home: runnerHome });
+  assert.deepEqual(fetched, first.receipt);
+
+  // 7. alter one context value, resubmit with the stored preview_id: 409 preview_mismatch
+  const signed = JSON.parse(readFileSync(paths.run, 'utf8')) as Run;
+  const region = signed.context.find((f) => f.key === 'client_region');
+  assert.ok(region);
+  region.value = 'eu-west-1';
+  writeFileSync(paths.run, JSON.stringify(signed));
+  await assert.rejects(runnerSubmit(result.run_id, { home: runnerHome }), (e: unknown) => {
+    assert.ok(e instanceof ApiError);
+    assert.equal(e.status, 409);
+    assert.equal(e.apiCode, 'preview_mismatch');
+    assertNoEcho(e.body, { run: signed });
+    return true;
+  });
+
+  // 8. a fake API key in a context value: 422 naming the path and rule, never the value
+  const leaky = JSON.parse(readFileSync(paths.draft, 'utf8')) as RunDraft;
+  const leakIndex = leaky.context.findIndex((f) => f.key === 'model.reported');
+  assert.ok(leakIndex >= 0);
+  const fakeKey = 'AKIA' + 'IOSFODNN7EXAMPLE';
+  (leaky.context[leakIndex] as RunDraft['context'][number]).value = `model ${fakeKey}`;
+  writeFileSync(paths.draft, JSON.stringify(leaky));
+  await assert.rejects(runnerPreview(result.run_id, { home: runnerHome }), (e: unknown) => {
+    assert.ok(e instanceof ApiError);
+    assert.equal(e.status, 422);
+    assert.equal(e.apiCode, 'validation_failed');
+    assert.deepEqual(e.details, [{ path: `/context/${leakIndex}/value`, rule: 'secret_pattern' }]);
+    assert.ok(!e.body.includes(fakeKey));
+    assert.ok(!e.message.includes(fakeKey));
+    return true;
+  });
+
+  // the console shows one more accepted run for the organization (stage-2
+  // node-token sign-in: CSRF cookie + field, signed session cookie)
+  const jar = new CookieJar();
+  const login = await postForm(t, jar, '/console/session', { token: t.token });
+  assert.equal(login.statusCode, 303, login.body);
+  const page = await browse(t, jar, '/');
+  assert.equal(page.statusCode, 200);
+  assert.match(page.body, new RegExp(`id="evidence-revision">${revisionBefore + 1}<`));
+  assert.ok(page.body.includes(`id="last-receipt-id">${String(first.receipt['receipt_id'])}<`));
 });
 
 test('read back: own run decrypts with server-assigned org_ref and private policy; receipt re-reads', async () => {

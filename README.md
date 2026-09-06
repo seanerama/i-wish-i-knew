@@ -27,6 +27,7 @@ See [`STATUS.md`](STATUS.md) for live runtime state (deployed version, environme
 
 - `packages/contracts` — frozen v1 envelope as TypeBox + committed JSON Schema, JCS canonicalization, validation, pack digests
 - `packages/service` — Fastify service: `member-api` intake, receipts, envelope encryption, protocol registry, console, worker
+- `packages/runner` — the `iwik` CLI and `@iwik/runner` API: local policy, vault, harness executor with egress guard, preview and submit
 - `packs/` — domain packs (data + harness); first: `inference-api`
 - `smoke/` — UI-smoke checks the Operator runs after a deploy
 
@@ -53,6 +54,19 @@ Ed25519 public key), `IWIK_SEED_NODE_ID`. Extra secret patterns for intake:
 
 The whole stack on a clean machine: `IWIK_KEK=$(openssl rand -hex 32) docker compose up --build`,
 then `curl localhost:3000/readyz`. Gates (`.verity/gates.json`): `node .verity/run-gates.cjs`.
+
+The runner (`packages/runner/README.md`, smoke check in `smoke/runner.md`):
+
+```sh
+npm run build:runner
+export IWIK_HOME=$(mktemp -d)                    # default ~/.iwik
+node packages/runner/bin/iwik.cjs init --service http://localhost:3000 --token-file ./node-token --node-id <ulid>
+node packages/runner/bin/iwik.cjs policy set allow_execution true
+node packages/runner/bin/iwik.cjs policy allow-target 127.0.0.1:8089
+node packages/runner/bin/iwik.cjs run --protocol inference-api/latency@1 --target http://127.0.0.1:8089 --target-kind fixture \
+  --context model.requested=stub-model --context concurrency=1 --context cache_disabled=true --context client_region=local
+node packages/runner/bin/iwik.cjs preview <run_id> && node packages/runner/bin/iwik.cjs submit <run_id>
+```
 
 ## Enrollment (pilot)
 
