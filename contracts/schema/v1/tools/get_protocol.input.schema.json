@@ -1,0 +1,18 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:iwik:contracts:v1:tools:get_protocol:input",
+  "title": "get_protocol input",
+  "additionalProperties": false,
+  "type": "object",
+  "required": [
+    "protocol_ref"
+  ],
+  "properties": {
+    "protocol_ref": {
+      "pattern": "^[a-z0-9][a-z0-9-]*/[a-z0-9][a-z0-9-]*@[1-9][0-9]*$",
+      "description": "Protocol reference: <pack>/<protocol>@<major>",
+      "type": "string"
+    }
+  },
+  "description": "Read one accepted protocol version: procedure identity, required context, permitted claims. Scope: query; side effect: read."
+}

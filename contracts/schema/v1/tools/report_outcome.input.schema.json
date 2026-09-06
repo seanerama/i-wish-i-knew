@@ -1,0 +1,31 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:iwik:contracts:v1:tools:report_outcome:input",
+  "title": "report_outcome input",
+  "additionalProperties": false,
+  "type": "object",
+  "required": [
+    "receipt_id",
+    "observation",
+    "observed_at"
+  ],
+  "properties": {
+    "receipt_id": {
+      "pattern": "^[0-9A-HJKMNP-TV-Z]{26}$",
+      "description": "ULID identifier",
+      "type": "string"
+    },
+    "observation": {
+      "additionalProperties": true,
+      "description": "What was observed, in the protocol's vocabulary",
+      "type": "object",
+      "properties": {}
+    },
+    "observed_at": {
+      "format": "date-time",
+      "description": "RFC 3339 UTC timestamp",
+      "type": "string"
+    }
+  },
+  "description": "Report an observed outcome against a prior released prediction (milestone 0.3). Scope: publish; side effect: remote_write."
+}

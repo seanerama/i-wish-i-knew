@@ -1,0 +1,37 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:iwik:contracts:v1:tools:challenge_finding:input",
+  "title": "challenge_finding input",
+  "additionalProperties": false,
+  "type": "object",
+  "required": [
+    "receipt_id",
+    "grounds"
+  ],
+  "properties": {
+    "receipt_id": {
+      "pattern": "^[0-9A-HJKMNP-TV-Z]{26}$",
+      "description": "ULID identifier",
+      "type": "string"
+    },
+    "grounds": {
+      "additionalProperties": false,
+      "type": "object",
+      "required": [
+        "kind",
+        "rationale"
+      ],
+      "properties": {
+        "kind": {
+          "minLength": 1,
+          "type": "string"
+        },
+        "rationale": {
+          "minLength": 1,
+          "type": "string"
+        }
+      }
+    }
+  },
+  "description": "File a structured challenge against a released finding (milestone 0.3). Scope: publish; side effect: remote_write."
+}

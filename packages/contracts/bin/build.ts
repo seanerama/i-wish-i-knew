@@ -1,44 +1,75 @@
 // Emit the frozen JSON Schema artifacts (ADR-0005).
 //
 //   tsx bin/build.ts          write contracts/schema/v1/<Entity>.schema.json
+//                             and contracts/schema/v1/tools/<tool>.<side>.schema.json
 //   tsx bin/build.ts --check  rebuild into a temp dir and diff against the
 //                             committed files; exit 1 on any drift
 import { mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { schemaDocument } from '../src/schema.js';
+import { schemaDocument, toolSchemaDocument, toolSchemaFile } from '../src/schema.js';
+import type { ToolSide } from '../src/schema.js';
 import { entityNames } from '../src/v1/index.js';
+import { toolNames } from '../src/v1/tools/index.js';
 
 const here = dirname(fileURLToPath(import.meta.url));
 const committedDir = resolve(here, '..', '..', '..', 'contracts', 'schema', 'v1');
+const TOOLS_DIR = 'tools';
+const SIDES: ToolSide[] = ['input', 'output'];
 
-function render(entity: string): string {
-  return JSON.stringify(schemaDocument(entity as (typeof entityNames)[number]), null, 2) + '\n';
+function renderJson(document: Record<string, unknown>): string {
+  return JSON.stringify(document, null, 2) + '\n';
 }
 
-function fileName(entity: string): string {
-  return `${entity}.schema.json`;
-}
-
-function build(outDir: string): void {
-  mkdirSync(outDir, { recursive: true });
+/** Every artifact as `relative path -> content`, so build and check share one list. */
+function artifacts(): Map<string, string> {
+  const out = new Map<string, string>();
   for (const entity of entityNames) {
-    writeFileSync(join(outDir, fileName(entity)), render(entity), 'utf8');
+    out.set(`${entity}.schema.json`, renderJson(schemaDocument(entity)));
   }
+  for (const tool of toolNames) {
+    for (const side of SIDES) {
+      out.set(
+        join(TOOLS_DIR, toolSchemaFile(tool, side)),
+        renderJson(toolSchemaDocument(tool, side)),
+      );
+    }
+  }
+  return out;
+}
+
+function build(outDir: string): number {
+  const files = artifacts();
+  mkdirSync(join(outDir, TOOLS_DIR), { recursive: true });
+  for (const [rel, content] of files) writeFileSync(join(outDir, rel), content, 'utf8');
+  return files.size;
+}
+
+function listSchemaFiles(dir: string): string[] {
+  let names: string[];
+  try {
+    names = readdirSync(dir).filter((f) => f.endsWith('.schema.json'));
+  } catch {
+    names = [];
+  }
+  let toolNamesOnDisk: string[];
+  try {
+    toolNamesOnDisk = readdirSync(join(dir, TOOLS_DIR))
+      .filter((f) => f.endsWith('.schema.json'))
+      .map((f) => join(TOOLS_DIR, f));
+  } catch {
+    toolNamesOnDisk = [];
+  }
+  return [...names, ...toolNamesOnDisk];
 }
 
 function check(): number {
   const tmp = mkdtempSync(join(tmpdir(), 'iwik-contracts-'));
   try {
     build(tmp);
-    const expected = new Set(readdirSync(tmp));
-    let committed: Set<string>;
-    try {
-      committed = new Set(readdirSync(committedDir).filter((f) => f.endsWith('.schema.json')));
-    } catch {
-      committed = new Set();
-    }
+    const expected = new Set(listSchemaFiles(tmp));
+    const committed = new Set(listSchemaFiles(committedDir));
     const drift: string[] = [];
     for (const name of expected) {
       if (!committed.has(name)) {
@@ -69,8 +100,8 @@ const mode = process.argv[2];
 if (mode === '--check') {
   process.exitCode = check();
 } else if (mode === undefined) {
-  build(committedDir);
-  console.log(`wrote ${entityNames.length} schema file(s) to ${committedDir}`);
+  const count = build(committedDir);
+  console.log(`wrote ${count} schema file(s) to ${committedDir}`);
 } else {
   console.error(`usage: build.ts [--check]`);
   process.exitCode = 2;

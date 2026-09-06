@@ -1,0 +1,103 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:iwik:contracts:v1:tools:plan_test:input",
+  "title": "plan_test input",
+  "additionalProperties": false,
+  "type": "object",
+  "required": [
+    "protocol_ref",
+    "target",
+    "question"
+  ],
+  "properties": {
+    "protocol_ref": {
+      "pattern": "^[a-z0-9][a-z0-9-]*/[a-z0-9][a-z0-9-]*@[1-9][0-9]*$",
+      "description": "Protocol reference: <pack>/<protocol>@<major>",
+      "type": "string"
+    },
+    "target": {
+      "additionalProperties": false,
+      "type": "object",
+      "required": [
+        "url",
+        "kind"
+      ],
+      "properties": {
+        "url": {
+          "minLength": 1,
+          "description": "Target base URL (http or https)",
+          "type": "string"
+        },
+        "kind": {
+          "type": "string",
+          "enum": [
+            "service",
+            "fixture",
+            "device"
+          ]
+        }
+      }
+    },
+    "question": {
+      "minLength": 1,
+      "type": "string"
+    },
+    "context": {
+      "description": "Operator-supplied context, keyed by dotted context key",
+      "type": "object",
+      "patternProperties": {
+        "^[a-z][a-z0-9_]*(\\.[a-z][a-z0-9_]*)*$": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      }
+    },
+    "planned": {
+      "minimum": 1,
+      "type": "integer"
+    },
+    "max_tokens": {
+      "minimum": 1,
+      "type": "integer"
+    },
+    "timeout_ms": {
+      "minimum": 1,
+      "type": "integer"
+    },
+    "prices": {
+      "description": "Operator-supplied prices the pack's cost model needs for non-fixture targets, keyed by the model's input names",
+      "type": "object",
+      "patternProperties": {
+        "^(.*)$": {
+          "minimum": 0,
+          "type": "number"
+        }
+      }
+    },
+    "investigation_id": {
+      "pattern": "^[0-9A-HJKMNP-TV-Z]{26}$",
+      "description": "ULID identifier",
+      "type": "string"
+    },
+    "sharing_policy": {
+      "type": "string",
+      "enum": [
+        "private",
+        "cooperative"
+      ]
+    }
+  },
+  "description": "Plan a local test: choose protocol, target, and context; saves the plan locally and returns its id, estimated cost, and what uncertainty it resolves. Never executes. Scope: query; side effect: local_write."
+}

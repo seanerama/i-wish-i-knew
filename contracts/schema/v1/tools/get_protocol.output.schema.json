@@ -1,0 +1,191 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:iwik:contracts:v1:tools:get_protocol:output",
+  "title": "get_protocol output",
+  "type": "object",
+  "description": "Output envelope of get_protocol: GET /v1/protocols/{ref}",
+  "required": [
+    "ok"
+  ],
+  "properties": {
+    "ok": {
+      "type": "boolean"
+    }
+  },
+  "oneOf": [
+    {
+      "additionalProperties": false,
+      "type": "object",
+      "required": [
+        "ok",
+        "data"
+      ],
+      "properties": {
+        "ok": {
+          "const": true,
+          "type": "boolean"
+        },
+        "data": {
+          "additionalProperties": false,
+          "description": "ProtocolVersion with its pack pointer",
+          "type": "object",
+          "required": [
+            "ref",
+            "protocol_digest",
+            "harness_digest",
+            "status",
+            "kind",
+            "required_context",
+            "permitted_claims",
+            "compatibility",
+            "context_schema_digest",
+            "result_schema_digest"
+          ],
+          "properties": {
+            "ref": {
+              "pattern": "^[a-z0-9][a-z0-9-]*/[a-z0-9][a-z0-9-]*@[1-9][0-9]*$",
+              "description": "Protocol reference: <pack>/<protocol>@<major>",
+              "type": "string"
+            },
+            "protocol_digest": {
+              "pattern": "^sha256:[0-9a-f]{64}$",
+              "description": "SHA-256 digest, `sha256:<hex>`",
+              "type": "string"
+            },
+            "harness_digest": {
+              "pattern": "^sha256:[0-9a-f]{64}$",
+              "description": "SHA-256 digest, `sha256:<hex>`",
+              "type": "string"
+            },
+            "status": {
+              "type": "string",
+              "enum": [
+                "draft",
+                "reviewed",
+                "accepted",
+                "superseded",
+                "deprecated"
+              ],
+              "description": "Registry lifecycle state"
+            },
+            "kind": {
+              "type": "string",
+              "enum": [
+                "controlled",
+                "observational"
+              ],
+              "description": "Sampling method; survives ingestion"
+            },
+            "required_context": {
+              "type": "array",
+              "items": {
+                "pattern": "^[a-z][a-z0-9_]*(\\.[a-z][a-z0-9_]*)*$",
+                "description": "Dotted lowercase context key",
+                "type": "string"
+              }
+            },
+            "permitted_claims": {
+              "type": "array",
+              "items": {
+                "pattern": "^[a-z][a-z0-9_]*$",
+                "type": "string"
+              }
+            },
+            "compatibility": {
+              "additionalProperties": false,
+              "type": "object",
+              "required": [
+                "harness_digests"
+              ],
+              "properties": {
+                "harness_digests": {
+                  "description": "Harness digests the runner may execute for this version",
+                  "type": "array",
+                  "items": {
+                    "pattern": "^sha256:[0-9a-f]{64}$",
+                    "description": "SHA-256 digest, `sha256:<hex>`",
+                    "type": "string"
+                  }
+                },
+                "notes": {
+                  "type": "string"
+                }
+              }
+            },
+            "context_schema_digest": {
+              "pattern": "^sha256:[0-9a-f]{64}$",
+              "description": "SHA-256 digest, `sha256:<hex>`",
+              "type": "string"
+            },
+            "result_schema_digest": {
+              "pattern": "^sha256:[0-9a-f]{64}$",
+              "description": "SHA-256 digest, `sha256:<hex>`",
+              "type": "string"
+            },
+            "pack": {
+              "additionalProperties": true,
+              "type": "object",
+              "properties": {
+                "id": {
+                  "type": "string"
+                },
+                "version": {
+                  "type": "string"
+                },
+                "pack_digest": {
+                  "pattern": "^sha256:[0-9a-f]{64}$",
+                  "description": "SHA-256 digest, `sha256:<hex>`",
+                  "type": "string"
+                },
+                "download": {
+                  "additionalProperties": true,
+                  "description": "Download pointer",
+                  "type": "object",
+                  "properties": {}
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "additionalProperties": false,
+      "type": "object",
+      "required": [
+        "ok",
+        "error"
+      ],
+      "properties": {
+        "ok": {
+          "const": false,
+          "type": "boolean"
+        },
+        "error": {
+          "additionalProperties": false,
+          "type": "object",
+          "required": [
+            "code",
+            "message"
+          ],
+          "properties": {
+            "code": {
+              "minLength": 1,
+              "pattern": "^[a-z][a-z0-9_]*$",
+              "description": "Machine-readable code: policy_denied, scope_required, suppressed, insufficient_evidence, validation_failed, not_yet_available, ...",
+              "type": "string"
+            },
+            "message": {
+              "description": "Never includes private field values",
+              "type": "string"
+            },
+            "next_step": {
+              "description": "Human-actionable text, e.g. the exact CLI command to run",
+              "type": "string"
+            }
+          }
+        }
+      }
+    }
+  ]
+}

@@ -1,0 +1,49 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:iwik:contracts:v1:tools:query_evidence:input",
+  "title": "query_evidence input",
+  "additionalProperties": false,
+  "type": "object",
+  "required": [
+    "protocol_ref"
+  ],
+  "properties": {
+    "protocol_ref": {
+      "pattern": "^[a-z0-9][a-z0-9-]*/[a-z0-9][a-z0-9-]*@[1-9][0-9]*$",
+      "description": "Protocol reference: <pack>/<protocol>@<major>",
+      "type": "string"
+    },
+    "investigation_id": {
+      "pattern": "^[0-9A-HJKMNP-TV-Z]{26}$",
+      "description": "ULID identifier",
+      "type": "string"
+    },
+    "context_filters": {
+      "description": "Context filters by context key",
+      "type": "object",
+      "patternProperties": {
+        "^(.*)$": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      }
+    },
+    "as_of_revision": {
+      "minimum": 0,
+      "type": "integer"
+    }
+  },
+  "description": "Ask the cooperative for evidence on a protocol under context filters. Returns a released AnswerReceipt, or ok:false with insufficient_evidence or suppressed and a next step. Scope: query; side effect: read."
+}

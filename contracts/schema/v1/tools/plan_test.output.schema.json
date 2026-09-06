@@ -1,0 +1,302 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:iwik:contracts:v1:tools:plan_test:output",
+  "title": "plan_test output",
+  "type": "object",
+  "description": "Output envelope of plan_test: runner: plan saved under ~/.iwik/plans/",
+  "required": [
+    "ok"
+  ],
+  "properties": {
+    "ok": {
+      "type": "boolean"
+    }
+  },
+  "oneOf": [
+    {
+      "additionalProperties": false,
+      "type": "object",
+      "required": [
+        "ok",
+        "data"
+      ],
+      "properties": {
+        "ok": {
+          "const": true,
+          "type": "boolean"
+        },
+        "data": {
+          "additionalProperties": false,
+          "description": "A saved plan under ~/.iwik/plans/<plan_id>.json",
+          "type": "object",
+          "required": [
+            "plan_id",
+            "created_at",
+            "protocol_ref",
+            "protocol_digest",
+            "target",
+            "question",
+            "context",
+            "required_context",
+            "planned",
+            "max_tokens",
+            "timeout_ms",
+            "sharing_policy",
+            "estimated_cost",
+            "resolves",
+            "execution"
+          ],
+          "properties": {
+            "plan_id": {
+              "pattern": "^[0-9A-HJKMNP-TV-Z]{26}$",
+              "description": "ULID identifier",
+              "type": "string"
+            },
+            "created_at": {
+              "format": "date-time",
+              "description": "RFC 3339 UTC timestamp",
+              "type": "string"
+            },
+            "protocol_ref": {
+              "pattern": "^[a-z0-9][a-z0-9-]*/[a-z0-9][a-z0-9-]*@[1-9][0-9]*$",
+              "description": "Protocol reference: <pack>/<protocol>@<major>",
+              "type": "string"
+            },
+            "protocol_digest": {
+              "pattern": "^sha256:[0-9a-f]{64}$",
+              "description": "SHA-256 digest, `sha256:<hex>`",
+              "type": "string"
+            },
+            "target": {
+              "additionalProperties": false,
+              "type": "object",
+              "required": [
+                "url",
+                "kind"
+              ],
+              "properties": {
+                "url": {
+                  "minLength": 1,
+                  "description": "Target base URL (http or https)",
+                  "type": "string"
+                },
+                "kind": {
+                  "type": "string",
+                  "enum": [
+                    "service",
+                    "fixture",
+                    "device"
+                  ]
+                }
+              }
+            },
+            "question": {
+              "type": "string"
+            },
+            "context": {
+              "description": "Operator-supplied context, keyed by dotted context key",
+              "type": "object",
+              "patternProperties": {
+                "^[a-z][a-z0-9_]*(\\.[a-z][a-z0-9_]*)*$": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "number"
+                    },
+                    {
+                      "type": "boolean"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                }
+              }
+            },
+            "required_context": {
+              "additionalProperties": false,
+              "type": "object",
+              "required": [
+                "known",
+                "unknown"
+              ],
+              "properties": {
+                "known": {
+                  "type": "array",
+                  "items": {
+                    "pattern": "^[a-z][a-z0-9_]*(\\.[a-z][a-z0-9_]*)*$",
+                    "description": "Dotted lowercase context key",
+                    "type": "string"
+                  }
+                },
+                "unknown": {
+                  "description": "Required keys nobody supplied yet; the run is excluded unless the harness measures them",
+                  "type": "array",
+                  "items": {
+                    "pattern": "^[a-z][a-z0-9_]*(\\.[a-z][a-z0-9_]*)*$",
+                    "description": "Dotted lowercase context key",
+                    "type": "string"
+                  }
+                }
+              }
+            },
+            "planned": {
+              "minimum": 1,
+              "type": "integer"
+            },
+            "max_tokens": {
+              "minimum": 1,
+              "type": "integer"
+            },
+            "timeout_ms": {
+              "minimum": 1,
+              "type": "integer"
+            },
+            "sharing_policy": {
+              "type": "string",
+              "enum": [
+                "private",
+                "cooperative"
+              ]
+            },
+            "investigation_id": {
+              "pattern": "^[0-9A-HJKMNP-TV-Z]{26}$",
+              "description": "ULID identifier",
+              "type": "string"
+            },
+            "estimated_cost": {
+              "additionalProperties": false,
+              "type": "object",
+              "required": [
+                "currency",
+                "amount",
+                "basis",
+                "budget_per_plan_usd",
+                "within_budget"
+              ],
+              "properties": {
+                "currency": {
+                  "const": "usd",
+                  "type": "string"
+                },
+                "amount": {
+                  "description": "null when the pack's cost model cannot price this target; the runner then refuses to execute (fail closed)",
+                  "anyOf": [
+                    {
+                      "minimum": 0,
+                      "type": "number"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "basis": {
+                  "description": "How the estimate was computed, or why it could not be",
+                  "type": "string"
+                },
+                "budget_per_plan_usd": {
+                  "minimum": 0,
+                  "type": "number"
+                },
+                "within_budget": {
+                  "anyOf": [
+                    {
+                      "type": "boolean"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                }
+              }
+            },
+            "resolves": {
+              "additionalProperties": false,
+              "type": "object",
+              "required": [
+                "claims",
+                "statement"
+              ],
+              "properties": {
+                "claims": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  }
+                },
+                "statement": {
+                  "type": "string"
+                }
+              }
+            },
+            "execution": {
+              "additionalProperties": false,
+              "type": "object",
+              "required": [
+                "allowed",
+                "reasons",
+                "next_step"
+              ],
+              "properties": {
+                "allowed": {
+                  "description": "Whether local policy allows run_test right now",
+                  "type": "boolean"
+                },
+                "reasons": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  }
+                },
+                "next_step": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "additionalProperties": false,
+      "type": "object",
+      "required": [
+        "ok",
+        "error"
+      ],
+      "properties": {
+        "ok": {
+          "const": false,
+          "type": "boolean"
+        },
+        "error": {
+          "additionalProperties": false,
+          "type": "object",
+          "required": [
+            "code",
+            "message"
+          ],
+          "properties": {
+            "code": {
+              "minLength": 1,
+              "pattern": "^[a-z][a-z0-9_]*$",
+              "description": "Machine-readable code: policy_denied, scope_required, suppressed, insufficient_evidence, validation_failed, not_yet_available, ...",
+              "type": "string"
+            },
+            "message": {
+              "description": "Never includes private field values",
+              "type": "string"
+            },
+            "next_step": {
+              "description": "Human-actionable text, e.g. the exact CLI command to run",
+              "type": "string"
+            }
+          }
+        }
+      }
+    }
+  ]
+}
