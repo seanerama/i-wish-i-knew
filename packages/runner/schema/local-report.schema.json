@@ -1,0 +1,160 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:iwik:runner:local-report:1",
+  "title": "LocalReport",
+  "description": "iwik report: a local-only report from the vault. It is never sent anywhere; the header says so.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "header",
+    "scope",
+    "corroboration",
+    "generated_at",
+    "protocol_ref",
+    "runs",
+    "accounting",
+    "claims",
+    "missing_context",
+    "limitations"
+  ],
+  "properties": {
+    "header": { "const": "Local evidence only — not corroborated by the cooperative" },
+    "scope": { "const": "local" },
+    "corroboration": { "const": "unreplicated" },
+    "generated_at": { "type": "string", "format": "date-time" },
+    "protocol_ref": {
+      "type": "string",
+      "pattern": "^[a-z0-9][a-z0-9-]*/[a-z0-9][a-z0-9-]*@[1-9][0-9]*$"
+    },
+    "runs": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "run_id",
+          "started_at",
+          "ended_at",
+          "target_kind",
+          "execution_status",
+          "accounting",
+          "sharing_policy",
+          "submitted",
+          "context_unknown"
+        ],
+        "properties": {
+          "run_id": { "type": "string", "pattern": "^[0-9A-HJKMNP-TV-Z]{26}$" },
+          "plan_id": { "type": "string", "pattern": "^[0-9A-HJKMNP-TV-Z]{26}$" },
+          "started_at": { "type": "string", "format": "date-time" },
+          "ended_at": { "type": "string", "format": "date-time" },
+          "target_kind": { "type": "string", "enum": ["service", "fixture", "device"] },
+          "execution_status": {
+            "type": "string",
+            "enum": ["attempted", "succeeded", "failed", "excluded", "unobserved"]
+          },
+          "exclusion_reason": { "type": "string" },
+          "exclusion_detail": { "type": "string" },
+          "accounting": { "$ref": "#/$defs/accounting" },
+          "sharing_policy": { "type": "string", "enum": ["private", "cooperative"] },
+          "submitted": { "type": "boolean" },
+          "receipt_id": { "type": "string" },
+          "context_unknown": { "type": "array", "items": { "type": "string" } },
+          "issues": { "type": "array", "items": { "type": "string" } }
+        }
+      }
+    },
+    "accounting": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["runs", "attempts"],
+      "properties": {
+        "runs": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["total", "succeeded", "failed", "excluded", "unobserved"],
+          "properties": {
+            "total": { "type": "integer", "minimum": 0 },
+            "succeeded": { "type": "integer", "minimum": 0 },
+            "failed": { "type": "integer", "minimum": 0 },
+            "excluded": { "type": "integer", "minimum": 0 },
+            "unobserved": { "type": "integer", "minimum": 0 }
+          }
+        },
+        "attempts": { "$ref": "#/$defs/accounting" }
+      }
+    },
+    "claims": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["name", "question", "eligible_runs", "below_minimum_runs", "metrics"],
+        "properties": {
+          "name": { "type": "string" },
+          "question": { "type": "string" },
+          "minimum_per_run": { "type": "string" },
+          "eligible_runs": { "type": "array", "items": { "type": "string" } },
+          "below_minimum_runs": { "type": "array", "items": { "type": "string" } },
+          "metrics": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["name", "kind", "per_run", "across_runs"],
+              "properties": {
+                "name": { "type": "string" },
+                "kind": { "type": "string", "enum": ["distribution", "rate", "breakdown"] },
+                "unit": { "type": "string" },
+                "per_run": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "required": ["run_id", "value"],
+                    "properties": {
+                      "run_id": { "type": "string" },
+                      "value": {}
+                    }
+                  }
+                },
+                "across_runs": {
+                  "description": "Spread of per-run values across eligible runs; never a pooled number",
+                  "type": "object",
+                  "additionalProperties": true
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "missing_context": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["key", "runs"],
+        "properties": {
+          "key": { "type": "string" },
+          "runs": { "type": "array", "items": { "type": "string" } }
+        }
+      }
+    },
+    "limitations": { "type": "array", "items": { "type": "string" } }
+  },
+  "$defs": {
+    "accounting": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["planned", "attempted", "succeeded", "failed", "excluded", "unobserved"],
+      "properties": {
+        "planned": { "type": "integer", "minimum": 0 },
+        "attempted": { "type": "integer", "minimum": 0 },
+        "succeeded": { "type": "integer", "minimum": 0 },
+        "failed": { "type": "integer", "minimum": 0 },
+        "excluded": { "type": "integer", "minimum": 0 },
+        "unobserved": { "type": "integer", "minimum": 0 }
+      }
+    }
+  }
+}

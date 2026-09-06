@@ -152,6 +152,7 @@ test('a second run in the same home is a separate vault entry (rerun-safe)', asy
     target: stub.url,
     planned: 2,
     offline: true,
+    targetKind: 'fixture' as const,
     context: OPERATOR_CONTEXT,
   };
   const a = await run(opts);
@@ -173,6 +174,7 @@ test('digest: one byte changed in harness/index.js refuses with harness_digest_m
       protocol: PROTOCOL,
       target: stub.url,
       offline: true,
+      targetKind: 'fixture',
       packsDir,
       context: OPERATOR_CONTEXT,
     }),
@@ -211,6 +213,7 @@ test('digest: the registry manifest is authoritative; a harness it does not list
     protocol: PROTOCOL,
     target: stub.url,
     planned: 1,
+    targetKind: 'fixture',
     context: OPERATOR_CONTEXT,
   });
   assert.equal(ok.execution_status, 'succeeded', ok.exclusion_reason);
@@ -220,19 +223,40 @@ test('digest: the registry manifest is authoritative; a harness it does not list
   // a manifest listing a different harness refuses the local one
   served = { ...real, compatibility: { harness_digests: ['sha256:' + '0'.repeat(64)] } };
   await assert.rejects(
-    run({ home, protocol: PROTOCOL, target: stub.url, planned: 1, context: OPERATOR_CONTEXT }),
+    run({
+      home,
+      protocol: PROTOCOL,
+      target: stub.url,
+      planned: 1,
+      targetKind: 'fixture',
+      context: OPERATOR_CONTEXT,
+    }),
     (e: unknown) => e instanceof RunnerError && e.code === 'harness_digest_mismatch',
   );
   // a manifest whose pack digest differs refuses too
   served = { ...real, pack: { pack_digest: 'sha256:' + '1'.repeat(64) } };
   await assert.rejects(
-    run({ home, protocol: PROTOCOL, target: stub.url, planned: 1, context: OPERATOR_CONTEXT }),
+    run({
+      home,
+      protocol: PROTOCOL,
+      target: stub.url,
+      planned: 1,
+      targetKind: 'fixture',
+      context: OPERATOR_CONTEXT,
+    }),
     (e: unknown) => e instanceof RunnerError && e.code === 'pack_digest_mismatch',
   );
   // a protocol that is not accepted does not run
   served = { ...real, status: 'draft' };
   await assert.rejects(
-    run({ home, protocol: PROTOCOL, target: stub.url, planned: 1, context: OPERATOR_CONTEXT }),
+    run({
+      home,
+      protocol: PROTOCOL,
+      target: stub.url,
+      planned: 1,
+      targetKind: 'fixture',
+      context: OPERATOR_CONTEXT,
+    }),
     (e: unknown) => e instanceof RunnerError && e.code === 'protocol_not_accepted',
   );
   assert.equal(stub.stub.stats.completions, 1, 'only the accepted run reached the target');
@@ -275,15 +299,15 @@ test('egress: a harness reaching for a second host is blocked and the run is exc
     target: stub.url,
     planned: 3,
     offline: true,
+    targetKind: 'fixture',
     packsDir,
     context: OPERATOR_CONTEXT,
   });
   assert.equal(leaked, 0, 'the second host must never be reached');
   assert.equal(result.execution_status, 'excluded');
-  assert.match(
-    result.exclusion_reason ?? '',
-    /^egress_violation: harness attempted 127\.0\.0\.1:\d+/,
-  );
+  // the wire vocabulary names no host; the vault detail does
+  assert.equal(result.exclusion_reason, 'egress_denied');
+  assert.match(result.exclusion_detail ?? '', /^harness attempted 127\.0\.0\.1:\d+/);
   assert.ok(result.egress_violations.length >= 3, JSON.stringify(result.egress_violations));
   const apis = new Set(result.egress_violations.map((v) => (v as { api: string }).api));
   assert.ok(apis.has('net.connect'));
@@ -293,7 +317,8 @@ test('egress: a harness reaching for a second host is blocked and the run is exc
   assert.match(readFileSync(paths.stderr, 'utf8'), /egress denied: 127\.0\.0\.1:\d+/);
   const draft = readJson<RunDraft>(paths.draft);
   assert.equal(draft.execution_status, 'excluded');
-  assert.equal(draft.exclusion_reason, result.exclusion_reason);
+  assert.equal(draft.exclusion_reason, 'egress_denied');
+  assert.equal(readJson<VaultMeta>(paths.meta).exclusion_detail, result.exclusion_detail);
   // accounting still reconciles: attempts the harness made are counted, the rest excluded
   const a = draft.accounting;
   assert.equal(a.planned, 3);
@@ -315,10 +340,12 @@ test('exit codes: 2 -> excluded with the stderr reason, 3 -> unobserved, crash -
     target: stub.url,
     planned: 4,
     offline: true,
+    targetKind: 'fixture',
     context: { ...OPERATOR_CONTEXT, concurrency: 2 },
   });
   assert.equal(violated.execution_status, 'excluded');
-  assert.match(violated.exclusion_reason ?? '', /concurrency = 1/);
+  assert.equal(violated.exclusion_reason, 'harness_protocol_violation');
+  assert.match(violated.exclusion_detail ?? '', /concurrency = 1/);
   assert.deepEqual(violated.accounting, {
     planned: 4,
     attempted: 0,
@@ -339,6 +366,7 @@ test('exit codes: 2 -> excluded with the stderr reason, 3 -> unobserved, crash -
     target: `http://127.0.0.1:${deadPort}`,
     planned: 4,
     offline: true,
+    targetKind: 'fixture',
     timeoutMs: 2000,
     context: OPERATOR_CONTEXT,
   });
@@ -377,6 +405,7 @@ test('exit codes: 2 -> excluded with the stderr reason, 3 -> unobserved, crash -
     target: stub.url,
     planned: 2,
     offline: true,
+    targetKind: 'fixture',
     packsDir,
     context: OPERATOR_CONTEXT,
   });
@@ -401,11 +430,13 @@ test('exit codes: 2 -> excluded with the stderr reason, 3 -> unobserved, crash -
     target: stub.url,
     planned: 2,
     offline: true,
+    targetKind: 'fixture',
     packsDir,
     context: OPERATOR_CONTEXT,
   });
   assert.equal(hollow.execution_status, 'excluded');
-  assert.match(hollow.exclusion_reason ?? '', /^attempts_missing/);
+  assert.equal(hollow.exclusion_reason, 'attempt_count_mismatch');
+  assert.match(hollow.exclusion_detail ?? '', /reported 0 of 2 planned/);
 });
 
 test('context merge: measured beats operator_reported (logged); missing required keys are unknown, not dropped', async () => {
@@ -419,6 +450,7 @@ test('context merge: measured beats operator_reported (logged); missing required
     target: stub.url,
     planned: 2,
     offline: true,
+    targetKind: 'fixture',
     context: { ...OPERATOR_CONTEXT, retry_policy: 'exponential' },
   });
   assert.equal(overridden.execution_status, 'succeeded');
@@ -447,10 +479,12 @@ test('context merge: measured beats operator_reported (logged); missing required
     target: stub.url,
     planned: 2,
     offline: true,
+    targetKind: 'fixture',
     context: { 'model.requested': 'stub-model', concurrency: 1 },
   });
   assert.equal(partial.execution_status, 'excluded');
-  assert.equal(partial.exclusion_reason, 'required_context_unknown: cache_disabled, client_region');
+  assert.equal(partial.exclusion_reason, 'required_context_unknown');
+  assert.equal(partial.exclusion_detail, 'required context unknown: cache_disabled, client_region');
   assert.deepEqual(partial.context_unknown, ['cache_disabled', 'client_region']);
   const partialDraft = readJson<RunDraft>(vaultPaths(home, partial.run_id).draft);
   assert.deepEqual(
@@ -507,6 +541,7 @@ test('api key: read from the named env var, given to the harness, scrubbed from 
     target: stub.url,
     planned: 1,
     offline: true,
+    targetKind: 'fixture',
     apiKeyEnv: 'IWIK_TEST_TARGET_KEY',
     env: { ...process.env, IWIK_TEST_TARGET_KEY: secret },
     context: OPERATOR_CONTEXT,
@@ -525,6 +560,7 @@ test('api key: read from the named env var, given to the harness, scrubbed from 
       target: stub.url,
       planned: 1,
       offline: true,
+      targetKind: 'fixture',
       apiKeyEnv: 'IWIK_TEST_MISSING',
       env: { ...process.env },
       context: OPERATOR_CONTEXT,

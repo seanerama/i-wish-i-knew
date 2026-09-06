@@ -1,13 +1,17 @@
-// `iwik` command line (stage 3): init, policy, run, preview, submit, receipt.
-// Every failure exits nonzero with a one-line reason on stderr; token and key
-// material are never printed. Only `run` writes something to stdout that
-// scripts capture: the run id.
+// `iwik` command line: init, policy, plan, run, report, preview, submit,
+// receipt, vault, mcp. Every failure exits nonzero with a one-line reason on
+// stderr; token and key material are never printed. Only `run`, `plan`, and
+// `report` write something to stdout that scripts capture: an id, or the
+// report itself.
 import { Command, InvalidArgumentError } from 'commander';
 import { isRunnerError, RunnerError } from './errors.js';
-import { init, resolveHome } from './home.js';
+import { discoverNode, init, loadToken, resolveHome } from './home.js';
+import { serveMcp } from './mcp.js';
+import { loadPlan, plan, planSummary } from './plan.js';
 import { loadPolicy, normalizeTargetEntry, savePolicy } from './policy.js';
-import { run } from './run.js';
-import type { RunOptions } from './run.js';
+import { renderMarkdown, report } from './report.js';
+import { run, runPlan } from './run.js';
+import type { RunOptions, RunResult } from './run.js';
 import { preview, receipt, submit } from './submit.js';
 import { listRuns, readMeta, readPreview, readReceipt } from './vault.js';
 
@@ -55,11 +59,27 @@ function sharing(value: string): 'private' | 'cooperative' {
   throw new InvalidArgumentError('sharing policy must be private or cooperative');
 }
 
+/** `--price name=usd` pairs into the cost-model price map. */
+function parsePrices(args: readonly string[]): Record<string, number> | undefined {
+  if (args.length === 0) return undefined;
+  const prices: Record<string, number> = {};
+  for (const arg of args) {
+    const eq = arg.indexOf('=');
+    const name = eq > 0 ? arg.slice(0, eq) : '';
+    const value = Number(arg.slice(eq + 1));
+    if (name === '' || !Number.isFinite(value) || value < 0) {
+      throw new RunnerError('usage', 'price must be <name>=<non-negative number>');
+    }
+    prices[name] = value;
+  }
+  return prices;
+}
+
 const program = new Command();
 program
   .name('iwik')
   .description(
-    'I Wish I Knew runner: run a protocol locally, preview, then submit sanitized evidence',
+    'I Wish I Knew runner: plan and run a protocol locally, read the local report, preview, then submit sanitized evidence',
   )
   .option('--home <dir>', 'runner home (default: $IWIK_HOME or ~/.iwik)')
   .showHelpAfterError()
@@ -77,19 +97,23 @@ function homeOf(): string {
  * Enrollment instructions, worded like the console's /org page ("Enroll a
  * node", packages/service/views/org.eta) so the two stay consistent. Only the
  * public key is ever shown; the token and private key are never printed.
+ * `iwik init` prints the base64 raw key; a PEM SPKI block is accepted at
+ * registration but is never what `iwik init` prints.
  */
 export function enrollmentInstructions(serviceUrl: string, home: string): string[] {
   return [
     '',
     `Enroll this node: sign in to the console at ${serviceUrl}/org, then`,
-    '  1. Paste the public key above under "Register a node" and register the node. Accepted',
-    '     formats (both are what iwik init may print): base64 raw key: one line of 44 characters,',
-    '     the 32 raw bytes of the Ed25519 public key (no PEM header lines), or PEM SPKI block:',
+    '  1. Paste the public key above under "Register a node" and register the node. iwik init',
+    '     prints the base64 raw key; a PEM block is accepted there too but is never what iwik init',
+    '     prints. Accepted formats: base64 raw key: one line of 44 characters, the 32 raw bytes of',
+    '     the Ed25519 public key (no PEM header lines), or PEM SPKI block:',
     '     -----BEGIN PUBLIC KEY----- ... -----END PUBLIC KEY-----. Either form is stored',
     '     canonically as the base64 raw key.',
     '  2. Issue the node a token with only the scopes it needs (query reads, submit previews and',
     '     submits runs, publish challenges, outcomes, withdrawals). Save the token to',
-    `     ${home}/token (0600): iwik init --service ${serviceUrl} --token-file <path> --node-id <node id>.`,
+    `     ${home}/token (0600): iwik init --service ${serviceUrl} --token-file <path>; the node id`,
+    '     is learned from GET /v1/whoami (pass --node-id only when working offline).',
     '  3. Lost or leaked? Revoke the token, or revoke the whole node: every request with a revoked',
     '     token answers 401, and intake rejects signatures from a revoked node.',
   ];
@@ -97,32 +121,66 @@ export function enrollmentInstructions(serviceUrl: string, home: string): string
 
 program
   .command('init')
-  .description('create the runner home, generate the Ed25519 signing key, store the node token')
+  .description(
+    'create the runner home, generate the Ed25519 signing key, store the node token, learn the node id',
+  )
   .requiredOption('--service <url>', 'service base URL')
   .option('--token-file <path>', 'file containing the node token (copied to <home>/token, 0600)')
-  .option('--node-id <ulid>', 'node id issued with the token')
+  .option('--node-id <ulid>', 'node id (offline; otherwise learned from GET /v1/whoami)')
   .option('--packs-dir <dir>', 'directory holding domain packs')
-  .action((opts: { service: string; tokenFile?: string; nodeId?: string; packsDir?: string }) => {
-    try {
-      const result = init({
-        home: homeOf(),
-        serviceUrl: opts.service,
-        ...(opts.tokenFile !== undefined ? { tokenFile: opts.tokenFile } : {}),
-        ...(opts.nodeId !== undefined ? { nodeId: opts.nodeId } : {}),
-        ...(opts.packsDir !== undefined ? { packsDir: opts.packsDir } : {}),
-      });
-      err(`home: ${result.home}`);
-      err(`service: ${result.service_url}`);
-      err(`node id: ${result.node_id ?? '(not set; pass --node-id before running)'}`);
-      err(`token: ${result.token_stored ? 'stored' : 'unchanged'}`);
-      err(`signing key: ${result.key_created ? 'generated' : 'kept'} (key_id ${result.key_id})`);
-      err('public key for enrollment (base64, raw Ed25519):');
-      out(result.pubkey);
-      for (const line of enrollmentInstructions(result.service_url, result.home)) err(line);
-    } catch (e) {
-      fail(e);
-    }
-  });
+  .option('--offline', 'do not call GET /v1/whoami')
+  .action(
+    async (opts: {
+      service: string;
+      tokenFile?: string;
+      nodeId?: string;
+      packsDir?: string;
+      offline?: boolean;
+    }) => {
+      try {
+        const home = homeOf();
+        const result = init({
+          home,
+          serviceUrl: opts.service,
+          ...(opts.tokenFile !== undefined ? { tokenFile: opts.tokenFile } : {}),
+          ...(opts.nodeId !== undefined ? { nodeId: opts.nodeId } : {}),
+          ...(opts.packsDir !== undefined ? { packsDir: opts.packsDir } : {}),
+        });
+        let nodeId = result.node_id;
+        let nodeNote = '';
+        if (opts.nodeId === undefined && opts.offline !== true) {
+          let hasToken = false;
+          try {
+            loadToken(home);
+            hasToken = true;
+          } catch {
+            hasToken = false;
+          }
+          if (hasToken) {
+            try {
+              const me = await discoverNode(home);
+              nodeId = me.node_id;
+              nodeNote = ` (from GET /v1/whoami; organization "${me.org_display_name}", scopes ${me.scopes.join(', ') || 'none'})`;
+            } catch (e) {
+              nodeNote = ` (GET /v1/whoami failed: ${e instanceof Error ? e.message : String(e)}; pass --node-id to set it offline)`;
+            }
+          }
+        }
+        err(`home: ${result.home}`);
+        err(`service: ${result.service_url}`);
+        err(
+          `node id: ${nodeId ?? '(not set; store a token so GET /v1/whoami can fill it in, or pass --node-id)'}${nodeNote}`,
+        );
+        err(`token: ${result.token_stored ? 'stored' : 'unchanged'}`);
+        err(`signing key: ${result.key_created ? 'generated' : 'kept'} (key_id ${result.key_id})`);
+        err('public key for enrollment (base64, raw Ed25519):');
+        out(result.pubkey);
+        for (const line of enrollmentInstructions(result.service_url, result.home)) err(line);
+      } catch (e) {
+        fail(e);
+      }
+    },
+  );
 
 const policy = program.command('policy').description('show or change the local execution policy');
 policy
@@ -198,10 +256,112 @@ policy
   });
 
 program
-  .command('run')
-  .description('execute one protocol against a target under local policy; prints the run id')
+  .command('plan')
+  .description(
+    'save a plan under plans/: protocol, target, context (unknowns listed), estimated cost, what it resolves; never executes',
+  )
   .requiredOption('--protocol <ref>', 'protocol ref, e.g. inference-api/latency@1')
   .requiredOption('--target <url>', 'target base URL')
+  .requiredOption('--question <text>', 'the question this test is meant to resolve')
+  .option('--context <k=v>', 'operator-supplied context field (repeatable)', collect, [])
+  .option('--target-kind <kind>', 'service | fixture | device', kind, 'service')
+  .option('--planned <n>', 'planned attempts', positiveInt('planned'), 10)
+  .option('--max-tokens <n>', 'max_tokens per request', positiveInt('max-tokens'), 64)
+  .option('--timeout-ms <n>', 'per-attempt timeout', positiveInt('timeout-ms'), 30000)
+  .option(
+    '--price <name=usd>',
+    'price the pack cost model needs for a non-fixture target (repeatable)',
+    collect,
+    [],
+  )
+  .option('--api-key-env <name>', 'environment variable holding the target API key')
+  .option('--investigation <ulid>', 'investigation id to attach')
+  .option('--share <policy>', 'sharing policy at submit: private | cooperative', sharing, 'private')
+  .option('--packs-dir <dir>', 'directory holding domain packs')
+  .option('--json', 'print the plan summary as JSON on stdout instead of the plan id')
+  .action(
+    (opts: {
+      protocol: string;
+      target: string;
+      question: string;
+      context: string[];
+      targetKind: 'service' | 'fixture' | 'device';
+      planned: number;
+      maxTokens: number;
+      timeoutMs: number;
+      price: string[];
+      apiKeyEnv?: string;
+      investigation?: string;
+      share: 'private' | 'cooperative';
+      packsDir?: string;
+      json?: boolean;
+    }) => {
+      try {
+        const prices = parsePrices(opts.price);
+        const record = plan({
+          home: homeOf(),
+          protocol: opts.protocol,
+          target: opts.target,
+          targetKind: opts.targetKind,
+          question: opts.question,
+          context: opts.context,
+          planned: opts.planned,
+          maxTokens: opts.maxTokens,
+          timeoutMs: opts.timeoutMs,
+          sharingPolicy: opts.share,
+          ...(prices !== undefined ? { prices } : {}),
+          ...(opts.apiKeyEnv !== undefined ? { apiKeyEnv: opts.apiKeyEnv } : {}),
+          ...(opts.investigation !== undefined ? { investigationId: opts.investigation } : {}),
+          ...(opts.packsDir !== undefined ? { packsDir: opts.packsDir } : {}),
+        });
+        const cost = record.estimated_cost;
+        err(
+          `plan ${record.plan_id}: ${record.protocol_ref} against ${record.target.kind} target, ${record.planned} attempts`,
+        );
+        err(
+          `estimated cost: ${cost.amount === null ? 'unknown' : cost.amount + ' USD'} (${cost.basis}); budget_per_plan_usd ${cost.budget_per_plan_usd}`,
+        );
+        if (record.required_context.unknown.length > 0)
+          err(`required context unknown: ${record.required_context.unknown.join(', ')}`);
+        err(`resolves: ${record.resolves.statement}`);
+        err(
+          `execution: ${record.execution.allowed ? 'allowed by policy' : 'denied: ' + record.execution.reasons.join('; ')}`,
+        );
+        err(`next: ${record.execution.next_step}`);
+        out(opts.json === true ? JSON.stringify(planSummary(record), null, 2) : record.plan_id);
+      } catch (e) {
+        fail(e);
+      }
+    },
+  );
+
+function printRun(result: RunResult): void {
+  const a = result.accounting;
+  err(
+    `run ${result.run_id}: ${result.execution_status}` +
+      (result.exclusion_reason !== undefined ? ` (${result.exclusion_reason})` : '') +
+      ` planned=${a.planned} attempted=${a.attempted} succeeded=${a.succeeded} failed=${a.failed}` +
+      ` excluded=${a.excluded} unobserved=${a.unobserved}`,
+  );
+  if (result.exclusion_detail !== undefined) err(`detail (vault only): ${result.exclusion_detail}`);
+  err(`estimated cost: ${result.estimated_cost.amount ?? 0} USD (${result.estimated_cost.basis})`);
+  for (const o of result.context_overrides) {
+    err(`context override: ${o.key} operator value replaced by harness ${o.harness_origin} value`);
+  }
+  for (const issue of result.issues) err(`note: ${issue}`);
+  err(`vault: ${result.vault_dir}`);
+  err(`report: iwik report ${result.run_id}`);
+  out(result.run_id);
+}
+
+program
+  .command('run')
+  .description(
+    'execute a saved plan (--plan) or one protocol against a target, under local policy and budget; prints the run id',
+  )
+  .option('--plan <plan_id>', 'execute a plan saved by "iwik plan"')
+  .option('--protocol <ref>', 'protocol ref, e.g. inference-api/latency@1')
+  .option('--target <url>', 'target base URL')
   .option('--planned <n>', 'planned attempts', positiveInt('planned'), 10)
   .option('--context <k=v>', 'operator-supplied context field (repeatable)', collect, [])
   .option('--target-kind <kind>', 'service | fixture | device', kind, 'service')
@@ -218,14 +378,16 @@ program
   .option('--api-key-env <name>', 'environment variable holding the target API key')
   .option('--timeout-ms <n>', 'per-attempt timeout', positiveInt('timeout-ms'), 30000)
   .option('--max-tokens <n>', 'max_tokens per request', positiveInt('max-tokens'), 64)
+  .option('--price <name=usd>', 'price for the pack cost model (repeatable)', collect, [])
   .option('--investigation <ulid>', 'investigation id to attach')
   .option('--offline', "verify against the pack's own protocol.json instead of the registry")
   .option('--manifest <file>', 'verify against a saved GET /v1/protocols/{ref} body')
   .option('--packs-dir <dir>', 'directory holding domain packs')
   .action(
     async (opts: {
-      protocol: string;
-      target: string;
+      plan?: string;
+      protocol?: string;
+      target?: string;
       planned: number;
       context: string[];
       targetKind: 'service' | 'fixture' | 'device';
@@ -234,14 +396,36 @@ program
       apiKeyEnv?: string;
       timeoutMs: number;
       maxTokens: number;
+      price: string[];
       investigation?: string;
       offline?: boolean;
       manifest?: string;
       packsDir?: string;
     }) => {
       try {
+        const home = homeOf();
+        if (opts.plan !== undefined) {
+          if (opts.protocol !== undefined || opts.target !== undefined) {
+            throw new RunnerError('usage', '--plan takes its protocol and target from the plan');
+          }
+          const result = await runPlan(opts.plan, {
+            home,
+            ...(opts.offline === true ? { offline: true } : {}),
+            ...(opts.manifest !== undefined ? { manifest: opts.manifest } : {}),
+            ...(opts.packsDir !== undefined ? { packsDir: opts.packsDir } : {}),
+          });
+          printRun(result);
+          return;
+        }
+        if (opts.protocol === undefined || opts.target === undefined) {
+          throw new RunnerError(
+            'usage',
+            'required option --protocol <ref> and --target <url> (or --plan <plan_id>) not specified',
+          );
+        }
+        const prices = parsePrices(opts.price);
         const options: RunOptions = {
-          home: homeOf(),
+          home,
           protocol: opts.protocol,
           target: opts.target,
           planned: opts.planned,
@@ -250,6 +434,7 @@ program
           sharingPolicy: opts.share,
           timeoutMs: opts.timeoutMs,
           maxTokens: opts.maxTokens,
+          ...(prices !== undefined ? { prices } : {}),
           ...(opts.model !== undefined ? { model: opts.model } : {}),
           ...(opts.apiKeyEnv !== undefined ? { apiKeyEnv: opts.apiKeyEnv } : {}),
           ...(opts.investigation !== undefined ? { investigationId: opts.investigation } : {}),
@@ -257,22 +442,31 @@ program
           ...(opts.manifest !== undefined ? { manifest: opts.manifest } : {}),
           ...(opts.packsDir !== undefined ? { packsDir: opts.packsDir } : {}),
         };
-        const result = await run(options);
-        const a = result.accounting;
-        err(
-          `run ${result.run_id}: ${result.execution_status}` +
-            (result.exclusion_reason !== undefined ? ` (${result.exclusion_reason})` : '') +
-            ` planned=${a.planned} attempted=${a.attempted} succeeded=${a.succeeded} failed=${a.failed}` +
-            ` excluded=${a.excluded} unobserved=${a.unobserved}`,
-        );
-        for (const o of result.context_overrides) {
-          err(
-            `context override: ${o.key} operator value replaced by harness ${o.harness_origin} value`,
-          );
-        }
-        for (const issue of result.issues) err(`note: ${issue}`);
-        err(`vault: ${result.vault_dir}`);
-        out(result.run_id);
+        printRun(await run(options));
+      } catch (e) {
+        fail(e);
+      }
+    },
+  );
+
+program
+  .command('report [run_id]')
+  .description(
+    'local-only report from the vault for one run or (--protocol) every run of a protocol; Markdown, or JSON with --json',
+  )
+  .option('--protocol <ref>', 'report every vault run of this protocol')
+  .option('--json', 'print the report as JSON')
+  .option('--packs-dir <dir>', 'directory holding domain packs (for claims.json)')
+  .action(
+    (runId: string | undefined, opts: { protocol?: string; json?: boolean; packsDir?: string }) => {
+      try {
+        const result = report({
+          home: homeOf(),
+          ...(runId !== undefined ? { runId } : {}),
+          ...(opts.protocol !== undefined ? { protocol: opts.protocol } : {}),
+          ...(opts.packsDir !== undefined ? { packsDir: opts.packsDir } : {}),
+        });
+        out(opts.json === true ? JSON.stringify(result, null, 2) : renderMarkdown(result));
       } catch (e) {
         fail(e);
       }
@@ -346,6 +540,33 @@ program
         line += r === undefined ? ' unsubmitted' : ` receipt:${String(r['receipt_id'])}`;
         out(line);
       }
+    } catch (e) {
+      fail(e);
+    }
+  });
+
+program
+  .command('plans')
+  .description('show a saved plan by id')
+  .argument('<plan_id>')
+  .action((planId: string) => {
+    try {
+      out(JSON.stringify(loadPlan(homeOf(), planId), null, 2));
+    } catch (e) {
+      fail(e);
+    }
+  });
+
+program
+  .command('mcp')
+  .description('serve the agent tools over stdio (MCP); refuses unless IWIK_MCP_ENABLED is set')
+  .option('--packs-dir <dir>', 'directory holding domain packs')
+  .action(async (opts: { packsDir?: string }) => {
+    try {
+      await serveMcp({
+        home: homeOf(),
+        ...(opts.packsDir !== undefined ? { packsDir: opts.packsDir } : {}),
+      });
     } catch (e) {
       fail(e);
     }

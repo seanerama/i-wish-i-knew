@@ -9,6 +9,9 @@ export type RunnerErrorCode =
   | 'policy_denied'
   | 'target_not_allowed'
   | 'target_invalid'
+  | 'budget_exceeded'
+  | 'budget_unknown'
+  | 'feature_disabled'
   | 'pack_not_found'
   | 'pack_invalid'
   | 'manifest_invalid'
@@ -21,6 +24,9 @@ export type RunnerErrorCode =
   | 'context_invalid'
   | 'run_not_found'
   | 'run_invalid'
+  | 'plan_not_found'
+  | 'plan_invalid'
+  | 'report_empty'
   | 'preview_required'
   | 'preview_expired'
   | 'api_error'
@@ -32,6 +38,9 @@ export const EXIT_CODES: Record<RunnerErrorCode, number> = {
   policy_denied: 3,
   target_not_allowed: 3,
   target_invalid: 3,
+  budget_exceeded: 3,
+  budget_unknown: 3,
+  feature_disabled: 3,
   harness_digest_mismatch: 4,
   protocol_digest_mismatch: 4,
   result_schema_digest_mismatch: 4,
@@ -46,6 +55,9 @@ export const EXIT_CODES: Record<RunnerErrorCode, number> = {
   preview_expired: 6,
   run_not_found: 6,
   run_invalid: 6,
+  plan_not_found: 6,
+  plan_invalid: 6,
+  report_empty: 6,
   not_initialized: 7,
   config_invalid: 7,
   policy_invalid: 7,

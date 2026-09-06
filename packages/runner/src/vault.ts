@@ -63,14 +63,35 @@ export type RunDraft = Omit<Run, 'submission' | 'target'> & {
   target: RunTarget & { label: string };
 };
 
+/**
+ * The fixed vocabulary of `Run.exclusion_reason` on the wire. Anything more
+ * specific (a host name, a harness stderr line, a context key) is vault-only
+ * detail in `VaultMeta.exclusion_detail`.
+ */
+export const EXCLUSION_REASONS = [
+  'egress_denied',
+  'harness_protocol_violation',
+  'attempt_count_mismatch',
+  'result_schema_invalid',
+  'required_context_unknown',
+  'context_schema_violation',
+] as const;
+export type ExclusionReason = (typeof EXCLUSION_REASONS)[number];
+
 export interface VaultMeta {
   run_id: string;
+  /** The plan this run executed (an ad-hoc `iwik run` mints one). */
+  plan_id?: string;
   created_at: string;
   protocol_ref: string;
   manifest_source: 'registry' | 'offline';
   service_url: string | undefined;
   target: { label: string; kind: RunTarget['kind']; allowed_hosts: string };
   sharing_policy: Run['submission']['sharing_policy'];
+  /** Estimate from the pack's cost model that the budget check accepted. */
+  estimated_cost_usd?: number;
+  /** Vault-only explanation of `exclusion_reason`; never leaves the node. */
+  exclusion_detail?: string | undefined;
   harness: {
     exit_code: number | null;
     signal: string | null;

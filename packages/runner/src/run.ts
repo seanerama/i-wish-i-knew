@@ -1,7 +1,18 @@
-// `iwik run`: policy check, pack verification against the registry (or an
-// offline manifest), harness execution under the egress guard, accounting
-// derived from attempts.jsonl, context merge, Run assembly, vault write.
-import { existsSync, readFileSync, renameSync, rmSync } from 'node:fs';
+// `iwik run`: policy check, budget check against the pack's cost model, pack
+// verification against the registry (or an offline manifest), harness
+// execution under the egress guard in a work directory OUTSIDE the vault,
+// accounting derived from attempts.jsonl, context merge, Run assembly, vault
+// write. `iwik run --plan <id>` executes a saved plan the same way.
+import {
+  cpSync,
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  renameSync,
+  rmSync,
+} from 'node:fs';
+import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import type { ContextValue, Run, RunAccounting, RunTarget } from '@iwik/contracts';
 import { digest as jcsDigest, validate } from '@iwik/contracts';
@@ -15,6 +26,8 @@ import {
   validateAgainst,
 } from './context.js';
 import type { ContextOverride } from './context.js';
+import { estimateCost, parseCostModel } from './cost.js';
+import type { CostEstimate } from './cost.js';
 import { RunnerError } from './errors.js';
 import { spawnHarness } from './harness.js';
 import type { SpawnResult } from './harness.js';
@@ -30,10 +43,12 @@ import {
 } from './home.js';
 import { defaultPacksDir, loadLocalPack, parseManifest, verifyPack } from './pack.js';
 import type { LocalPack, Manifest } from './pack.js';
+import { loadPlan, savePlan } from './plan.js';
 import { checkExecution, loadPolicy, targetHost } from './policy.js';
+import type { Policy } from './policy.js';
 import { ulid, ULID_PATTERN } from './ulid.js';
 import { artifactFor, readEgressLog, tightenPermissions, vaultPaths } from './vault.js';
-import type { RunDraft, VaultMeta } from './vault.js';
+import type { ExclusionReason, RunDraft, VaultMeta } from './vault.js';
 
 export interface RunOptions {
   home?: string;
@@ -57,6 +72,8 @@ export interface RunOptions {
   investigationId?: string;
   sharingPolicy?: Run['submission']['sharing_policy'];
   planId?: string;
+  /** Operator-supplied prices for the pack's cost model (non-fixture targets). */
+  prices?: Record<string, number>;
   packsDir?: string;
   fetch?: FetchLike;
   env?: NodeJS.ProcessEnv;
@@ -64,10 +81,15 @@ export interface RunOptions {
 
 export interface RunResult {
   run_id: string;
+  plan_id: string;
   vault_dir: string;
   execution_status: Run['execution_status'];
-  exclusion_reason: string | undefined;
+  /** Fixed vocabulary (the only form that reaches the wire). */
+  exclusion_reason: ExclusionReason | undefined;
+  /** Vault-only explanation (may name hosts or quote harness stderr). */
+  exclusion_detail: string | undefined;
   accounting: RunAccounting;
+  estimated_cost: CostEstimate;
   harness: SpawnResult;
   context_overrides: ContextOverride[];
   context_unknown: string[];
@@ -181,6 +203,85 @@ function positiveInt(value: number | undefined, fallback: number, name: string):
   return value;
 }
 
+/**
+ * Budget (ADR-0003, ADR-0006): the estimate from the pack's cost model must
+ * exist and fit `budget_per_plan_usd`. A target the model cannot price is
+ * refused, never assumed free.
+ */
+export function checkBudget(
+  policy: Policy,
+  local: LocalPack,
+  inputs: {
+    targetKind: RunTarget['kind'];
+    planned: number;
+    maxTokens: number;
+    prices?: Record<string, number> | undefined;
+  },
+): CostEstimate {
+  const estimate = estimateCost(parseCostModel(local.claims), inputs);
+  if (estimate.amount === null) {
+    throw new RunnerError(
+      'budget_unknown',
+      `no cost estimate for a ${inputs.targetKind} target (${estimate.basis}); the runner refuses to execute without one`,
+    );
+  }
+  if (estimate.amount > policy.budget_per_plan_usd) {
+    throw new RunnerError(
+      'budget_exceeded',
+      `estimated cost ${estimate.amount} USD exceeds budget_per_plan_usd ${policy.budget_per_plan_usd} (${estimate.basis})`,
+    );
+  }
+  return estimate;
+}
+
+/** A private work directory for one harness run, outside the vault (mkdtemp is 0700). */
+function makeWorkDir(env: NodeJS.ProcessEnv): string {
+  const base = env['IWIK_WORK_DIR'] ?? tmpdir();
+  if (env['IWIK_WORK_DIR'] !== undefined) ensurePrivateDir(base);
+  return mkdtempSync(join(base, 'iwik-run-'));
+}
+
+/** Execute a saved plan (`iwik run --plan <id>`): every parameter comes from the plan file. */
+export async function runPlan(
+  planId: string,
+  options: Pick<RunOptions, 'home' | 'offline' | 'manifest' | 'packsDir' | 'fetch' | 'env'> = {},
+): Promise<RunResult> {
+  const env = options.env ?? process.env;
+  const home = resolveHome(options.home, env);
+  const record = loadPlan(home, planId);
+  const result = await run({
+    home,
+    protocol: record.protocol_ref,
+    target: record.target.url,
+    targetKind: record.target.kind,
+    planned: record.planned,
+    maxTokens: record.max_tokens,
+    timeoutMs: record.timeout_ms,
+    context: record.context,
+    sharingPolicy: record.sharing_policy,
+    planId: record.plan_id,
+    ...(record.investigation_id !== undefined ? { investigationId: record.investigation_id } : {}),
+    ...(record.prices !== undefined ? { prices: record.prices } : {}),
+    ...(record.api_key_env !== undefined ? { apiKeyEnv: record.api_key_env } : {}),
+    ...(options.packsDir !== undefined
+      ? { packsDir: options.packsDir }
+      : record.packs_dir !== undefined
+        ? { packsDir: record.packs_dir }
+        : {}),
+    ...(options.offline === true ? { offline: true } : {}),
+    ...(options.manifest !== undefined ? { manifest: options.manifest } : {}),
+    ...(options.fetch !== undefined ? { fetch: options.fetch } : {}),
+    env,
+  });
+  record.runs.push({
+    run_id: result.run_id,
+    started_at: new Date().toISOString(),
+    execution_status: result.execution_status,
+  });
+  savePlan(home, record);
+  return result;
+}
+
 export async function run(options: RunOptions): Promise<RunResult> {
   const env = options.env ?? process.env;
   const home = resolveHome(options.home, env);
@@ -191,6 +292,9 @@ export async function run(options: RunOptions): Promise<RunResult> {
   const sharingPolicy = options.sharingPolicy ?? 'private';
   if (options.investigationId !== undefined && !ULID_PATTERN.test(options.investigationId)) {
     throw new RunnerError('usage', 'investigation id must be a ULID');
+  }
+  if (options.planId !== undefined && !ULID_PATTERN.test(options.planId)) {
+    throw new RunnerError('usage', 'plan id must be a ULID');
   }
   const operatorContext = Array.isArray(options.context)
     ? parseContextArgs(options.context)
@@ -207,31 +311,36 @@ export async function run(options: RunOptions): Promise<RunResult> {
   if (nodeId === undefined) {
     throw new RunnerError(
       'not_initialized',
-      'node id is not configured; run "iwik init --node-id <ulid>" with the id issued with your token',
+      'node id is not configured; run "iwik init" with a token (GET /v1/whoami fills it in) or pass --node-id',
     );
   }
 
-  // 3. Pack and digests.
+  // 3. Pack, digests, then budget: a tampered pack is reported before a
+  //    missing price is, and neither reaches the harness.
   const packsDir =
     options.packsDir ?? env['IWIK_PACKS_DIR'] ?? config?.packs_dir ?? defaultPacksDir;
   const local = loadLocalPack(packsDir, options.protocol);
   const { manifest, source, serviceUrl } = await fetchManifest(options, home, local);
   verifyPack(local, manifest);
+  const estimate = checkBudget(policy, local, {
+    targetKind,
+    planned,
+    maxTokens,
+    prices: options.prices,
+  });
 
-  // 4. Vault entry and harness input.
+  // 4. Vault entry and the harness work directory. The harness only ever sees
+  //    the work directory (input, output, egress log): it cannot derive the
+  //    vault's location, so it cannot read sibling runs.
   const runId = ulid();
   const paths = vaultPaths(home, runId);
-  ensurePrivateDir(paths.dir);
-  ensurePrivateDir(paths.output);
   const apiKey = options.apiKeyEnv !== undefined ? env[options.apiKeyEnv] : undefined;
   if (options.apiKeyEnv !== undefined && (apiKey === undefined || apiKey === '')) {
-    rmSync(paths.dir, { recursive: true, force: true });
     throw new RunnerError('usage', `environment variable ${options.apiKeyEnv} is not set`);
   }
   const model = options.model ?? operatorContext['model.requested'];
   const target: Record<string, unknown> = { url: targetUrl.toString() };
   if (typeof model === 'string') target['model'] = model;
-  if (apiKey !== undefined) target['api_key'] = apiKey;
   const planId = options.planId ?? ulid();
   const input = {
     plan_id: planId,
@@ -241,34 +350,45 @@ export async function run(options: RunOptions): Promise<RunResult> {
     budget: { planned, max_tokens: maxTokens },
     timeout_ms: timeoutMs,
   };
-  writePrivateJson(paths.input, input);
-  const startedAt = new Date().toISOString();
-
-  // 5. Execute under the guard.
+  ensurePrivateDir(paths.dir);
+  ensurePrivateDir(paths.output);
+  const work = makeWorkDir(env);
+  const workInput = join(work, 'input.json');
+  const workOutput = join(work, 'output');
+  const workEgress = join(work, 'egress.jsonl');
   let harness: SpawnResult;
+  const startedAt = new Date().toISOString();
   try {
+    mkdirSync(workOutput, { mode: 0o700 });
+    // The credential goes to the harness only; the vault copy below never has it.
+    if (apiKey !== undefined) target['api_key'] = apiKey;
+    writePrivateJson(workInput, input);
+    delete target['api_key'];
+
+    // 5. Execute under the guard.
     harness = await spawnHarness({
       harnessEntry: local.harnessEntry,
-      inputFile: paths.input,
-      outputDir: paths.output,
+      inputFile: workInput,
+      outputDir: workOutput,
       allowedHosts,
-      egressLog: paths.egress,
+      egressLog: workEgress,
       stdoutFile: paths.stdout,
       stderrFile: paths.stderr,
       timeoutMs: timeoutMs * (planned + 1),
     });
-  } finally {
-    // Credentials never persist in the vault beyond the harness's lifetime.
-    if (apiKey !== undefined) {
-      delete target['api_key'];
-      writePrivateJson(paths.input, input);
+
+    // Copy the results into the vault after the harness has exited.
+    for (const name of ['attempts.jsonl', 'result.json', 'context.json']) {
+      const from = join(workOutput, name);
+      if (existsSync(from)) renameSync(from, join(paths.dir, name));
     }
+    cpSync(workOutput, paths.output, { recursive: true });
+    if (existsSync(workEgress)) renameSync(workEgress, paths.egress);
+    writePrivateJson(paths.input, input);
+  } finally {
+    rmSync(work, { recursive: true, force: true });
   }
   const endedAt = new Date().toISOString();
-  for (const name of ['attempts.jsonl', 'result.json', 'context.json']) {
-    const from = join(paths.output, name);
-    if (existsSync(from)) renameSync(from, join(paths.dir, name));
-  }
 
   // 6. Status, accounting, context.
   const issues: string[] = [];
@@ -315,15 +435,19 @@ export async function run(options: RunOptions): Promise<RunResult> {
     projection(merged.context),
   );
 
+  // Exclusion reasons on the wire come from a fixed vocabulary; the detail
+  // (hosts, harness stderr, key names) stays in the vault.
   let status: Run['execution_status'];
-  let reason: string | undefined;
+  let reason: ExclusionReason | undefined;
+  let detail: string | undefined;
   let remainder: Remainder;
   const firstViolation = egressViolations[0] as { host?: unknown; port?: unknown } | undefined;
   if (firstViolation !== undefined) {
     status = 'excluded';
+    reason = 'egress_denied';
     const host = typeof firstViolation.host === 'string' ? firstViolation.host : 'unknown host';
     const port = typeof firstViolation.port === 'number' ? `:${firstViolation.port}` : '';
-    reason = `egress_violation: harness attempted ${host}${port}, outside IWIK_ALLOWED_HOSTS`;
+    detail = `harness attempted ${host}${port}, outside IWIK_ALLOWED_HOSTS`;
     remainder = 'excluded';
   } else if (harness.timed_out) {
     status = 'failed';
@@ -334,7 +458,8 @@ export async function run(options: RunOptions): Promise<RunResult> {
     remainder = 'excluded';
   } else if (harness.exit_code === 2) {
     status = 'excluded';
-    reason = harness.stderr_first_line ?? 'protocol violated (harness exit 2)';
+    reason = 'harness_protocol_violation';
+    detail = harness.stderr_first_line ?? 'protocol violated (harness exit 2)';
     remainder = 'excluded';
   } else if (harness.exit_code === 3) {
     status = 'unobserved';
@@ -356,19 +481,24 @@ export async function run(options: RunOptions): Promise<RunResult> {
     const reported = attempts.lines.length;
     if (attempts.issues.length > 0 || reported < planned) {
       status = 'excluded';
-      reason = `attempts_missing: harness reported ${reported} of ${planned} planned attempts`;
+      reason = 'attempt_count_mismatch';
+      detail = `harness reported ${reported} of ${planned} planned attempts`;
     } else if (derived.overflow > 0) {
       status = 'excluded';
-      reason = `attempts_exceed_planned: harness reported ${reported} attempts for ${planned} planned`;
+      reason = 'attempt_count_mismatch';
+      detail = `harness reported ${reported} attempts for ${planned} planned`;
     } else if (resultIssues.length > 0) {
       status = 'excluded';
-      reason = `result_invalid: ${resultIssues[0]}`;
+      reason = 'result_schema_invalid';
+      detail = resultIssues[0];
     } else if (merged.unknown.length > 0) {
       status = 'excluded';
-      reason = `required_context_unknown: ${merged.unknown.join(', ')}`;
+      reason = 'required_context_unknown';
+      detail = `required context unknown: ${merged.unknown.join(', ')}`;
     } else if (contextSchemaIssues.length > 0) {
       status = 'excluded';
-      reason = `context_schema_violation: ${contextSchemaIssues.map((i) => `${i.path} ${i.rule}`).join(', ')}`;
+      reason = 'context_schema_violation';
+      detail = contextSchemaIssues.map((i) => `${i.path} ${i.rule}`).join(', ');
     }
   }
   issues.push(...resultIssues.map((i) => `result: ${i}`));
@@ -406,13 +536,16 @@ export async function run(options: RunOptions): Promise<RunResult> {
   };
   const meta: VaultMeta = {
     run_id: runId,
+    plan_id: planId,
     created_at: startedAt,
     protocol_ref: local.ref,
     manifest_source: source,
     service_url: serviceUrl,
     target: { label, kind: targetKind, allowed_hosts: allowedHosts },
     sharing_policy: sharingPolicy,
+    estimated_cost_usd: estimate.amount ?? 0,
     harness,
+    exclusion_detail: detail,
     context_overrides: merged.overrides,
     context_unknown: merged.unknown,
     egress_violations: egressViolations,
@@ -446,10 +579,13 @@ export async function run(options: RunOptions): Promise<RunResult> {
 
   return {
     run_id: runId,
+    plan_id: planId,
     vault_dir: paths.dir,
     execution_status: status,
     exclusion_reason: reason,
+    exclusion_detail: detail,
     accounting: derived.accounting,
+    estimated_cost: estimate,
     harness,
     context_overrides: merged.overrides,
     context_unknown: merged.unknown,
