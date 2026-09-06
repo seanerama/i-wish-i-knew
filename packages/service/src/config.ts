@@ -71,6 +71,19 @@ export interface Config {
   featureDedupe: boolean;
   /** Worker poll interval in milliseconds (`IWIK_WORKER_INTERVAL_MS`, default 5 s). */
   workerIntervalMs: number;
+  /**
+   * Stage 9: the real `POST /v1/evidence/query` (matching, thresholds,
+   * differencing defence, versioned calculation). Default OFF everywhere:
+   * off, the stage 5 stub answer (`insufficient_evidence` /
+   * `no_cooperative_evidence`) continues unchanged.
+   */
+  featureCooperativeQuery: boolean;
+  /**
+   * The most candidate runs one query decrypts (`IWIK_QUERY_COHORT_CAP`,
+   * default 500). A larger cohort is answered `suppressed` with reason
+   * `cohort_too_large` before any body is opened.
+   */
+  queryCohortCap: number;
 }
 
 const here = dirname(fileURLToPath(import.meta.url));
@@ -237,5 +250,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
     featureWithdrawal: flag(env['IWIK_FEATURE_WITHDRAWAL'], false),
     featureDedupe: flag(env['IWIK_FEATURE_DEDUPE'], false),
     workerIntervalMs: positiveInt(env['IWIK_WORKER_INTERVAL_MS'], 5000, 'IWIK_WORKER_INTERVAL_MS'),
+    featureCooperativeQuery: flag(env['IWIK_FEATURE_COOPERATIVE_QUERY'], false),
+    queryCohortCap: positiveInt(env['IWIK_QUERY_COHORT_CAP'], 500, 'IWIK_QUERY_COHORT_CAP'),
   };
 }

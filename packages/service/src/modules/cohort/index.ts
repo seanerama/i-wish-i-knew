@@ -53,18 +53,23 @@ export function containmentFilter(filters: CohortFilters): Partial<IndexContext>
   return doc as Partial<IndexContext>;
 }
 
-interface CountRow {
+/** What the contributor merge needs from a run row (stage 9 reuses it on candidate rows). */
+export interface ContributorRow {
   org_ref: string;
   measurement_digest: string | null;
   shared_source_suspect: boolean;
+}
+
+interface CountRow extends ContributorRow {
   n: string | number;
 }
 
 /**
  * Merge organizations linked by a shared measurement into one contributor:
- * a union-find over org_refs keyed by the digests flagged as shared.
+ * a union-find over org_refs keyed by the digests flagged as shared. Returns
+ * org_ref -> contributor unit (the root org_ref of its group).
  */
-function contributorOf(rows: CountRow[]): Map<string, string> {
+export function contributorOf(rows: readonly ContributorRow[]): Map<string, string> {
   const parent = new Map<string, string>();
   const find = (x: string): string => {
     let root = x;

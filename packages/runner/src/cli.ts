@@ -4,6 +4,8 @@
 // `report` write something to stdout that scripts capture: an id, or the
 // report itself.
 import { Command, InvalidArgumentError } from 'commander';
+import { parseContextArgs } from './context.js';
+import { queryCooperative, renderReceipt } from './cooperative.js';
 import { isRunnerError, RunnerError } from './errors.js';
 import { discoverNode, init, loadToken, resolveHome } from './home.js';
 import { serveMcp } from './mcp.js';
@@ -459,13 +461,59 @@ program
 program
   .command('report [run_id]')
   .description(
-    'local-only report from the vault for one run or (--protocol) every run of a protocol; Markdown, or JSON with --json',
+    'local-only report from the vault for one run or (--protocol) every run of a protocol; Markdown, or JSON with --json. ' +
+      'With --cooperative: ask the cooperative for a released answer on --protocol under --context filters and render the receipt',
   )
   .option('--protocol <ref>', 'report every vault run of this protocol')
   .option('--json', 'print the report as JSON')
   .option('--packs-dir <dir>', 'directory holding domain packs (for claims.json)')
+  .option(
+    '--cooperative',
+    'query the cooperative (POST /v1/evidence/query) instead of the local vault; needs --protocol',
+  )
+  .option('--context <k=v>', 'context filter for --cooperative (repeatable)', collect, [])
+  .option(
+    '--as-of <revision>',
+    'pin the cooperative cohort at an earlier evidence revision',
+    positiveInt('as-of'),
+  )
   .action(
-    (runId: string | undefined, opts: { protocol?: string; json?: boolean; packsDir?: string }) => {
+    async (
+      runId: string | undefined,
+      opts: {
+        protocol?: string;
+        json?: boolean;
+        packsDir?: string;
+        cooperative?: boolean;
+        context: string[];
+        asOf?: number;
+      },
+    ) => {
+      if (opts.cooperative === true) {
+        try {
+          if (opts.protocol === undefined || runId !== undefined) {
+            throw new RunnerError(
+              'usage',
+              'report --cooperative needs --protocol <ref> and no run id',
+            );
+          }
+          const receipt = await queryCooperative({
+            home: homeOf(),
+            protocol: opts.protocol,
+            context: parseContextArgs(opts.context),
+            ...(opts.asOf !== undefined ? { asOfRevision: opts.asOf } : {}),
+          });
+          if (receipt.status !== 'released') {
+            err(
+              `${receipt.status}: ${(receipt.suppression_reasons ?? []).join(', ') || 'no reason given'} (receipt ${receipt.receipt_id})`,
+            );
+          }
+          out(opts.json === true ? JSON.stringify(receipt, null, 2) : renderReceipt(receipt));
+        } catch (e) {
+          fail(e);
+        }
+        return;
+      }
       try {
         const result = report({
           home: homeOf(),

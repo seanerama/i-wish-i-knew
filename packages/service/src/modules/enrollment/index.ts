@@ -51,6 +51,7 @@ import {
 } from '../identity/index.js';
 import type { InviteKind, InviteRow, Scope } from '../identity/index.js';
 import { PASSWORD_MAX_LENGTH, PASSWORD_MIN_LENGTH, hashPassword } from '../identity/password.js';
+import { listOwnQueryReceipts } from '../aggregate/index.js';
 import { REASON_CODES, listOwnRuns, orgRefOf } from '../withdrawal/index.js';
 
 /** Bump when the wording of any clause below changes; agreements record it. */
@@ -384,7 +385,10 @@ export function registerEnrollmentRoutes(app: FastifyInstance, deps: EnrollmentD
     const nodes = await listNodes(pool, session.org_id);
     const orgRef = await orgRefOf(pool, session.org_id);
     const runs = orgRef === undefined ? [] : await listOwnRuns(pool, orgRef);
+    // Stage 9: the organization's own query receipts, each linking to /receipts/<id>.
+    const receipts = orgRef === undefined ? [] : await listOwnQueryReceipts(pool, orgRef);
     return reply.view('org', {
+      receipts: receipts.map((r) => ({ ...r, issued_at: r.issued_at.toISOString() })),
       product: PRODUCT_NAME,
       org_name: session.org_name,
       csrf: csrfToken(request, reply, config),

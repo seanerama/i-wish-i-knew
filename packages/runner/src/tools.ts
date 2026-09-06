@@ -15,6 +15,7 @@ import type {
 import { toolNames, validateTool } from '@iwik/contracts';
 import { ApiClient } from './client.js';
 import type { FetchLike } from './client.js';
+import { nextStepFor } from './cooperative.js';
 import { ApiError, RunnerError } from './errors.js';
 import type { ErrorDetail } from './errors.js';
 import { loadConfig, loadToken, resolveHome } from './home.js';
@@ -153,17 +154,14 @@ const handlers: { [N in ToolName]: Handler<N> } = {
     const res = await clientFor(home, ctx).post<AnswerReceipt>('/v1/evidence/query', input);
     const answer = res.body;
     if (answer.status === 'released') return ok<'query_evidence'>({ receipt: answer });
+    // Stage 9: the receipt (own evidence included) is re-readable with
+    // get_receipt; the envelope carries the bands, the reasons, and the step.
     const reasons = (answer.suppression_reasons ?? []).join(', ') || 'none given';
-    const filters = Object.keys(input.context_filters ?? {});
     return fail(
       answer.status,
       `${answer.status === 'insufficient_evidence' ? 'no cooperative evidence' : 'answer ' + answer.status} for ${input.protocol_ref}` +
         ` (receipt ${answer.receipt_id}, evidence revision ${answer.evidence_revision}, cohort orgs ${answer.cohort.orgs}, runs ${answer.cohort.runs}, reasons: ${reasons})`,
-      answer.status === 'insufficient_evidence'
-        ? `Tell the user honestly that the commons has no shareable evidence for this question yet. To resolve it locally: call plan_test with protocol_ref ${input.protocol_ref}, the target, and the question` +
-            (filters.length > 0 ? ` (context: ${filters.join(', ')})` : '') +
-            `; the operator then runs the returned iwik run --plan command, and iwik report <run_id> shows the local result. Re-read this receipt later with get_receipt ${answer.receipt_id}.`
-        : `The cooperative withheld the answer (${reasons}). Explain that suppression protects members; broaden the context filters or wait for more contributors, and re-read with get_receipt ${answer.receipt_id}.`,
+      nextStepFor(answer, input.protocol_ref),
     );
   },
 

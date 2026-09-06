@@ -117,6 +117,23 @@ export async function bootDedupeApp(options: BootOptions = {}): Promise<TestApp>
   return bootApp({ ...options, env: { IWIK_FEATURE_DEDUPE: 'on', ...options.env } });
 }
 
+/**
+ * Boot with the stage 9 surface: IWIK_FEATURE_COOPERATIVE_QUERY on, plus
+ * withdrawal, dedupe, and enrollment so the whole loop can be driven.
+ */
+export async function bootCooperativeApp(options: BootOptions = {}): Promise<TestApp> {
+  return bootApp({
+    ...options,
+    env: {
+      IWIK_FEATURE_COOPERATIVE_QUERY: 'on',
+      IWIK_FEATURE_WITHDRAWAL: 'on',
+      IWIK_FEATURE_DEDUPE: 'on',
+      IWIK_FEATURE_ENROLLMENT: 'on',
+      ...options.env,
+    },
+  });
+}
+
 /** What `buildHandlers` needs, taken from a booted app (the worker builds the same from config). */
 export function handlerDeps(t: TestApp): HandlerDeps {
   return {
@@ -551,4 +568,169 @@ export async function enrollWithNode(
   const node_id = await registerNode(t, org, key.pubkey);
   const issued = await issueTokenViaConsole(t, org, node_id, scopes);
   return { ...org, node_id, key, token: issued.token, token_id: issued.token_id };
+}
+
+// ---------------------------------------------------------------------------
+// Stage 9: a fixture cohort. Organizations are created straight through the
+// identity module (or enrolled through the console by the caller); every run
+// goes through the real intake (preview, sign, submit), so digests, the
+// index projection, and the contributions ledger are all real.
+
+/** The env-seeded organization as an OrgWithNode (the seed node, key, and token). */
+export async function seededOrg(t: TestApp): Promise<OrgWithNode> {
+  const res = await t.app.iwik.pool.query<{ org_id: string; org_ref: string }>(
+    `SELECT o.org_id, r.org_ref FROM identity.organizations o
+       JOIN identity.org_refs r ON r.org_id = o.org_id WHERE o.name = $1`,
+    [SEED_ORG],
+  );
+  const row = res.rows[0];
+  if (row === undefined) throw new Error('seed organization missing');
+  return { ...row, node_id: SEED_NODE_ID, key: t.nodeKey, token: t.token };
+}
+
+export interface SeededRun {
+  /** Per-run ttft p50 in ms; p90/p95/p99 are +3/+4/+5, total_ms is +10 throughout. */
+  ttft_p50: number;
+  /** The `client_region` context value: one per scenario, so cohorts do not overlap. */
+  region: string;
+  /** Failed attempts out of `attempted` (default 20). */
+  failed?: number;
+  attempted?: number;
+  retry_policy?: string;
+  target_kind?: Run['target']['kind'];
+  sharing_policy?: Run['submission']['sharing_policy'];
+}
+
+/** Patch the fixture into one seeded measurement (service target, distinct result, seeded latencies). */
+export function seededRun(seed: SeededRun): (run: Run) => void {
+  return (run) => {
+    const attempted = seed.attempted ?? 20;
+    const failed = seed.failed ?? 2;
+    run.target = { kind: seed.target_kind ?? 'service', label_digest: 'sha256:' + 'a'.repeat(64) };
+    run.submission = { ...run.submission, sharing_policy: seed.sharing_policy ?? 'cooperative' };
+    for (const field of run.context) {
+      if (field.key === 'client_region') field.value = seed.region;
+      if (field.key === 'retry_policy' && seed.retry_policy !== undefined) {
+        field.value = seed.retry_policy;
+      }
+    }
+    run.accounting = {
+      planned: attempted,
+      attempted,
+      succeeded: attempted - failed,
+      failed,
+      excluded: 0,
+      unobserved: 0,
+    };
+    const p = seed.ttft_p50;
+    run.result = {
+      protocol_ref: run.protocol_ref,
+      summary: {
+        attempted,
+        succeeded: attempted - failed,
+        failed,
+        error_rate: failed / attempted,
+        ttft_ms: { p50: p, p90: p + 3, p95: p + 4, p99: p + 5 },
+        total_ms: { p50: p + 10, p90: p + 13, p95: p + 14, p99: p + 15 },
+        // Every seeded measurement is distinct (dedupe keys on the result).
+        nonce: ulid(),
+      },
+    };
+  };
+}
+
+/** Submit seeded runs as one organization through the real intake; returns the run ids in order. */
+export async function contribute(
+  t: TestApp,
+  who: OrgWithNode,
+  seeds: readonly SeededRun[],
+): Promise<string[]> {
+  const ids: string[] = [];
+  for (const seed of seeds) {
+    const { res, run } = await submitFresh(t, who, seededRun(seed));
+    if (res.statusCode !== 201) throw new Error(`contribute failed: ${res.statusCode} ${res.body}`);
+    const receipt = res.json<{ status: string }>();
+    if (receipt.status !== 'accepted') throw new Error(`contribute: receipt ${receipt.status}`);
+    ids.push(run.run_id);
+  }
+  return ids;
+}
+
+export interface QueryBody {
+  protocol_ref?: string;
+  context_filters?: Record<string, unknown>;
+  as_of_revision?: number;
+  investigation_id?: string;
+}
+
+/** POST /v1/evidence/query as the given token; the raw response. */
+export async function queryEvidence(
+  t: TestApp,
+  token: string,
+  body: QueryBody,
+): Promise<LightMyRequestResponse> {
+  return t.app.inject({
+    method: 'POST',
+    url: '/v1/evidence/query',
+    headers: authHeader(token),
+    payload: { protocol_ref: 'inference-api/latency@1', ...body },
+  });
+}
+
+export interface PrivacyExpectations {
+  /** Strings that must appear nowhere in the receipt (other organizations' ids, refs, names). */
+  forbidden: readonly string[];
+  /** The caller's own ids: allowed under result.own_evidence only. */
+  own?: readonly string[];
+}
+
+/** Keys whose values are counts of runs or organizations: bands on the wire, never numbers. */
+const COUNT_KEYS = /^(n|runs|orgs|count|.*_count|.*_runs|.*_orgs)$/;
+
+/**
+ * Brief demonstration 5: nothing private in a released receipt. No foreign
+ * run_id / node_id / org_ref / name anywhere; own ids only under
+ * own_evidence; every count key a band; no exact integer between 2 and 10
+ * outside own_evidence (the revision and the tail-claim minimum excepted).
+ */
+export function assertReceiptPrivate(
+  receipt: Record<string, unknown>,
+  expectations: PrivacyExpectations,
+): void {
+  const text = JSON.stringify(receipt);
+  for (const s of expectations.forbidden) {
+    if (text.includes(s)) throw new Error(`receipt carries a private string (${s.length} chars)`);
+  }
+  const outside: Record<string, unknown> = structuredClone(receipt);
+  const result = outside['result'];
+  if (typeof result === 'object' && result !== null) {
+    delete (result as Record<string, unknown>)['own_evidence'];
+  }
+  delete outside['cohort'];
+  const outsideText = JSON.stringify(outside);
+  for (const s of expectations.own ?? []) {
+    if (outsideText.includes(s)) throw new Error('own id appears outside own_evidence');
+  }
+  const walk = (value: unknown, path: string): void => {
+    if (Array.isArray(value)) {
+      value.forEach((v, i) => walk(v, `${path}/${i}`));
+      return;
+    }
+    if (typeof value === 'object' && value !== null) {
+      for (const [key, v] of Object.entries(value as Record<string, unknown>)) {
+        const here = `${path}/${key}`;
+        // `minimum_runs` is the policy constant (20), not a count of anything.
+        if (COUNT_KEYS.test(key) && key !== 'minimum_runs' && typeof v !== 'string') {
+          throw new Error(`count at ${here} is not a band`);
+        }
+        walk(v, here);
+      }
+      return;
+    }
+    if (typeof value === 'number' && Number.isInteger(value) && value >= 2 && value <= 10) {
+      if (path === '/evidence_revision' || path.endsWith('/minimum_runs')) return;
+      throw new Error(`exact small count at ${path}`);
+    }
+  };
+  walk(outside, '');
 }

@@ -97,7 +97,7 @@ export async function buildApp(config: Config): Promise<FastifyInstance> {
   registerHealth(app, pool, config);
   registerRegistryRoutes(app, registry);
   registerIntakeRoutes(app, { pool, envelope, registry, config });
-  registerAggregateRoutes(app, { pool, registry });
+  registerAggregateRoutes(app, { pool, registry, config, envelope });
   registerConsoleRoutes(app, { pool, config, registry, loginFailures, loginIpFailures });
   registerEnrollmentRoutes(app, { pool, config });
   registerWithdrawalRoutes(app, { pool, config });
@@ -121,6 +121,7 @@ export async function buildApp(config: Config): Promise<FastifyInstance> {
         enrollment: config.featureEnrollment ? 'enabled' : 'disabled',
         withdrawal: config.featureWithdrawal ? 'enabled' : 'disabled',
         dedupe: config.featureDedupe ? 'enabled' : 'disabled',
+        cooperative_query: config.featureCooperativeQuery ? 'enabled' : 'disabled',
         operator_token: config.operatorTokenHash === undefined ? 'unset' : 'set',
         kek: config.kekSource,
       },

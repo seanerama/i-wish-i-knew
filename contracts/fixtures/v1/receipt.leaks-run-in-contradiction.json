@@ -1,0 +1,27 @@
+{
+  "receipt_id": "01ARZ3NDEKTSV4RRFFQ69G5RQ2",
+  "query_digest": "sha256:2b4d6c8a0e1f3b5d7c9a2e4f6b8d0c1a3f5e7d9b1c3a5e7f9b2d4c6a8e0f1b3d",
+  "status": "released",
+  "cohort": {
+    "protocol_ref": "inference-api/latency@1",
+    "filters": { "concurrency": 1 },
+    "orgs": "3-5",
+    "runs": "5-10"
+  },
+  "calculation_version": "latency-v1",
+  "policy_version": "2026-09-p1",
+  "evidence_revision": 42,
+  "result": {
+    "contradictions": [
+      {
+        "kind": "org_level_iqr_disjoint",
+        "claim": "latency_distribution",
+        "metric": "ttft_ms",
+        "statistic": "p50",
+        "text": "Two contributing organizations report non-overlapping interquartile ranges.",
+        "run_id": "01ARZ3NDEKTSV4RRFFQ69G5FAV"
+      }
+    ]
+  },
+  "issued_at": "2026-09-06T12:30:00Z"
+}

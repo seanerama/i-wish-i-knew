@@ -196,7 +196,8 @@ function toReceipt(row: ReceiptRow): Receipt {
   };
 }
 
-async function findReceipt(
+/** One of the organization's receipts (any kind), or undefined; never another organization's. */
+export async function findReceipt(
   db: Queryable,
   receiptId: string,
   orgRef: string,

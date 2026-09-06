@@ -26,6 +26,14 @@ export type { ReportOptions, LocalReport, ReportRun, ReportClaim, ReportMetric }
 export { preview, submit, receipt, wireRun } from './submit.js';
 export type { ClientOptions, PreviewOptions, PreviewResult, SubmitResult } from './submit.js';
 export { withdraw, WITHDRAWAL_REASON_CODES, isWithdrawalReasonCode } from './withdraw.js';
+export {
+  queryCooperative,
+  renderReceipt,
+  nextStepFor,
+  COOPERATIVE_HEADER,
+  SUPPRESSION_EXPLANATIONS,
+} from './cooperative.js';
+export type { CooperativeQueryOptions } from './cooperative.js';
 export type { WithdrawOptions, WithdrawResult, WithdrawalReasonCode } from './withdraw.js';
 export {
   init,
