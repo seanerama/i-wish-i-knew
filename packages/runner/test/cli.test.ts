@@ -270,6 +270,217 @@ function iwikAsync(home: string, args: string[]) {
   );
 }
 
+test('challenge, predict, outcome: vocabularies enforced locally, ids on stdout, the prediction before the outcome', async () => {
+  const service = await fakeService();
+  try {
+    const { home } = makeHome(service.url);
+    const receiptId = '01ARZ3NDEKTSV4RRFFQ69G5RC1';
+    service.receipts.set(receiptId, { receipt_id: receiptId, kind: 'query', status: 'released' });
+
+    // challenge: grounds vocabulary, target shape, note bound, nothing sent
+    const noGrounds = iwik(home, ['challenge', receiptId]);
+    assert.equal(noGrounds.code, 1);
+    assert.match(noGrounds.stderr, /required option '--grounds <code>'/);
+    const badGrounds = iwik(home, ['challenge', receiptId, '--grounds', 'vibes']);
+    assert.equal(badGrounds.code, 1);
+    assert.match(badGrounds.stderr, /grounds must be one of: method, context_mismatch/);
+    const badTarget = iwik(home, ['challenge', 'claim:nope', '--grounds', 'method']);
+    assert.equal(badTarget.code, 2);
+    assert.match(badTarget.stderr, /^iwik: usage: .*\[\/target pattern\]/);
+    const longNote = iwik(home, [
+      'challenge',
+      receiptId,
+      '--grounds',
+      'method',
+      '--note',
+      'x'.repeat(501),
+    ]);
+    assert.equal(longNote.code, 2);
+    assert.match(longNote.stderr, /\/statement\/note maxLength/);
+    const badDirection = iwik(home, [
+      'challenge',
+      receiptId,
+      '--grounds',
+      'replication_failed',
+      '--direction',
+      'sideways',
+    ]);
+    assert.equal(badDirection.code, 1);
+    assert.match(badDirection.stderr, /direction must be one of: higher, lower, different/);
+    assert.equal(service.challenges.size, 0, 'nothing sent');
+
+    const filed = await iwikAsync(home, [
+      'challenge',
+      receiptId,
+      '--grounds',
+      'replication_failed',
+      '--claim',
+      'latency_distribution',
+      '--statistic',
+      'p95',
+      '--direction',
+      'higher',
+      '--replication-run',
+      '01ARZ3NDEKTSV4RRFFQ69G5RN1',
+      '--note',
+      'our run disagreed',
+    ]);
+    assert.equal(filed.code, 0, filed.all);
+    assert.match(filed.stdout.trim(), /^[0-9A-HJKMNP-TV-Z]{26}$/);
+    assert.match(filed.stderr, /challenge filed: open, grounds replication_failed, target receipt/);
+    assert.ok(!filed.all.includes(TEST_TOKEN));
+    assert.deepEqual(service.lastBody, {
+      target: { kind: 'receipt', id: receiptId },
+      grounds: 'replication_failed',
+      statement: {
+        claim: 'latency_distribution',
+        statistic: 'p95',
+        direction: 'higher',
+        replication_run_id: '01ARZ3NDEKTSV4RRFFQ69G5RN1',
+        note: 'our run disagreed',
+      },
+    });
+    const claimed = await iwikAsync(home, [
+      'challenge',
+      'claim:01ARZ3NDEKTSV4RRFFQ69G5CM1',
+      '--grounds',
+      'method',
+    ]);
+    assert.equal(claimed.code, 0, claimed.all);
+    assert.match(claimed.stderr, /target claim/);
+    const foreign = await iwikAsync(home, [
+      'challenge',
+      '01ARZ3NDEKTSV4RRFFQ69G5FXR',
+      '--grounds',
+      'method',
+    ]);
+    assert.equal(foreign.code, 5);
+    assert.match(foreign.stderr, /^iwik: api_error: not_found: not_found \(HTTP 404\)/);
+
+    // predict: target spec, horizon, rule, one threshold
+    const noRule = iwik(home, [
+      'predict',
+      '--receipt',
+      receiptId,
+      '--target',
+      'latency_distribution.ttft_ms.p95',
+      '--horizon',
+      '2099-01-01',
+    ]);
+    assert.equal(noRule.code, 1);
+    assert.match(noRule.stderr, /required option '--rule <code>'/);
+    const twoThresholds = iwik(home, [
+      'predict',
+      '--receipt',
+      receiptId,
+      '--target',
+      'latency_distribution.ttft_ms.p95',
+      '--horizon',
+      '2099-01-01',
+      '--rule',
+      'own_measurement',
+      '--below',
+      '300',
+      '--above',
+      '100',
+    ]);
+    assert.equal(twoThresholds.code, 2);
+    assert.match(twoThresholds.stderr, /\/target\/comparator oneOf/);
+    const badHorizon = iwik(home, [
+      'predict',
+      '--receipt',
+      receiptId,
+      '--target',
+      'error_rate',
+      '--horizon',
+      'soon',
+      '--rule',
+      'own_measurement',
+    ]);
+    assert.equal(badHorizon.code, 2);
+    assert.match(badHorizon.stderr, /\/prediction\/horizon pattern/);
+    assert.equal(service.predictions.size, 0, 'nothing sent');
+
+    const predicted = await iwikAsync(home, [
+      'predict',
+      '--receipt',
+      receiptId,
+      '--target',
+      'latency_distribution.ttft_ms.p95',
+      '--horizon',
+      '2099-01-01',
+      '--rule',
+      'own_measurement',
+      '--probability',
+      '0.7',
+      '--below',
+      '300',
+      '--unit',
+      'ms',
+    ]);
+    assert.equal(predicted.code, 0, predicted.all);
+    const predictionId = predicted.stdout.trim();
+    assert.match(predictionId, /^[0-9A-HJKMNP-TV-Z]{26}$/);
+    assert.match(
+      predicted.stderr,
+      /prediction registered at .*horizon 2099-01-01, rule own_measurement/,
+    );
+    assert.match(predicted.stderr, /cannot be changed/);
+    assert.deepEqual(service.lastBody, {
+      prediction: {
+        based_on_receipt_id: receiptId,
+        target: {
+          claim: 'latency_distribution',
+          metric: 'ttft_ms',
+          statistic: 'p95',
+          comparator: 'below',
+          value: 300,
+          unit: 'ms',
+        },
+        horizon: '2099-01-01',
+        probability: 0.7,
+        evaluation_rule: 'own_measurement',
+      },
+    });
+
+    // outcome: result vocabulary, environment flag separate, once only
+    const badResult = iwik(home, ['outcome', predictionId, '--result', 'sort of']);
+    assert.equal(badResult.code, 1);
+    assert.match(badResult.stderr, /result must be one of: met, not_met, indeterminate/);
+    const recorded = await iwikAsync(home, [
+      'outcome',
+      predictionId,
+      '--result',
+      'not_met',
+      '--environment-changed',
+      '--observed-at',
+      '2026-09-28T08:00:00Z',
+      '--receipt',
+      receiptId,
+    ]);
+    assert.equal(recorded.code, 0, recorded.all);
+    assert.match(recorded.stdout.trim(), /^[0-9A-HJKMNP-TV-Z]{26}$/);
+    assert.match(
+      recorded.stderr,
+      /outcome recorded: not_met \(environment changed\); prediction registered .* is unchanged/,
+    );
+    assert.deepEqual(service.lastBody, {
+      prediction_id: predictionId,
+      observed: {
+        observed_at: '2026-09-28T08:00:00.000Z',
+        result: 'not_met',
+        environment_changed: true,
+      },
+      based_on_receipt_id: receiptId,
+    });
+    const again = await iwikAsync(home, ['outcome', predictionId, '--result', 'met']);
+    assert.equal(again.code, 5);
+    assert.match(again.stderr, /outcome_exists/);
+  } finally {
+    await service.close();
+  }
+});
+
 test('withdraw: validates ids and the reason vocabulary locally, prints the withdrawal id, exits 5 on not_found', async () => {
   const service = await fakeService();
   try {

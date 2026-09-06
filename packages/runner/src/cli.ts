@@ -1,5 +1,6 @@
 // `iwik` command line: init, policy, plan, run, report, preview, submit,
-// receipt, withdraw, vault, mcp. Every failure exits nonzero with a one-line reason on
+// receipt, withdraw, challenge, predict, outcome, vault, mcp. Every failure
+// exits nonzero with a one-line reason on
 // stderr; token and key material are never printed. Only `run`, `plan`, and
 // `report` write something to stdout that scripts capture: an id, or the
 // report itself.
@@ -8,6 +9,27 @@ import { parseContextArgs } from './context.js';
 import { queryCooperative, renderReceipt } from './cooperative.js';
 import { isRunnerError, RunnerError } from './errors.js';
 import { discoverNode, init, loadToken, resolveHome } from './home.js';
+import {
+  CHALLENGE_DIRECTIONS,
+  CHALLENGE_GROUNDS,
+  CHALLENGE_NOTE_MAX_LENGTH,
+  EVALUATION_RULES,
+  OUTCOME_RESULTS,
+  challenge,
+  isChallengeGrounds,
+  isEvaluationRule,
+  isOutcomeResult,
+  outcome,
+  parseChallengeTarget,
+  parsePredictionTarget,
+  predict,
+} from './ledger.js';
+import type {
+  ChallengeGrounds,
+  ChallengeStatement,
+  EvaluationRule,
+  OutcomeResult,
+} from '@iwik/contracts';
 import { serveMcp } from './mcp.js';
 import { loadPlan, plan, planSummary } from './plan.js';
 import { loadPolicy, normalizeTargetEntry, savePolicy } from './policy.js';
@@ -61,6 +83,34 @@ function kind(value: string): 'service' | 'fixture' | 'device' {
 function reasonCode(value: string): WithdrawalReasonCode {
   if (isWithdrawalReasonCode(value)) return value;
   throw new InvalidArgumentError(`reason must be one of: ${WITHDRAWAL_REASON_CODES.join(', ')}`);
+}
+
+function groundsCode(value: string): ChallengeGrounds {
+  if (isChallengeGrounds(value)) return value;
+  throw new InvalidArgumentError(`grounds must be one of: ${CHALLENGE_GROUNDS.join(', ')}`);
+}
+
+function evaluationRule(value: string): EvaluationRule {
+  if (isEvaluationRule(value)) return value;
+  throw new InvalidArgumentError(`rule must be one of: ${EVALUATION_RULES.join(', ')}`);
+}
+
+function outcomeResult(value: string): OutcomeResult {
+  if (isOutcomeResult(value)) return value;
+  throw new InvalidArgumentError(`result must be one of: ${OUTCOME_RESULTS.join(', ')}`);
+}
+
+function directionCode(value: string): 'higher' | 'lower' | 'different' {
+  if (value === 'higher' || value === 'lower' || value === 'different') return value;
+  throw new InvalidArgumentError(`direction must be one of: ${CHALLENGE_DIRECTIONS.join(', ')}`);
+}
+
+function finiteNumber(name: string): (value: string) => number {
+  return (value: string): number => {
+    const n = Number(value);
+    if (!Number.isFinite(n)) throw new InvalidArgumentError(`${name} must be a number`);
+    return n;
+  };
 }
 
 function sharing(value: string): 'private' | 'cooperative' {
@@ -600,6 +650,174 @@ program
       fail(e);
     }
   });
+
+program
+  .command('challenge <target>')
+  .description(
+    'file a structured challenge against one of your released receipts (<receipt id>) or a claim released on it (claim:<claim id>); prints the challenge id',
+  )
+  .requiredOption('--grounds <code>', `grounds: ${CHALLENGE_GROUNDS.join(' | ')}`, groundsCode)
+  .option(
+    '--note <text>',
+    `a note for the operator (at most ${CHALLENGE_NOTE_MAX_LENGTH} characters; never shown to other members)`,
+  )
+  .option('--claim <key>', 'the claim objected to (pack vocabulary)')
+  .option('--metric <key>', 'the metric objected to (pack vocabulary)')
+  .option('--statistic <key>', 'the statistic objected to (p50, p95, ...)')
+  .option('--context-key <key>', 'the context key that does not compare (context_mismatch)')
+  .option(
+    '--direction <d>',
+    `how your evidence differs: ${CHALLENGE_DIRECTIONS.join(' | ')}`,
+    directionCode,
+  )
+  .option('--replication-run <run_id>', 'one of YOUR runs that failed to reproduce the finding')
+  .action(
+    async (
+      target: string,
+      opts: {
+        grounds: ChallengeGrounds;
+        note?: string;
+        claim?: string;
+        metric?: string;
+        statistic?: string;
+        contextKey?: string;
+        direction?: 'higher' | 'lower' | 'different';
+        replicationRun?: string;
+      },
+    ) => {
+      try {
+        const statement: ChallengeStatement = {
+          ...(opts.claim !== undefined ? { claim: opts.claim } : {}),
+          ...(opts.metric !== undefined ? { metric: opts.metric } : {}),
+          ...(opts.statistic !== undefined ? { statistic: opts.statistic } : {}),
+          ...(opts.contextKey !== undefined ? { context_key: opts.contextKey } : {}),
+          ...(opts.direction !== undefined ? { direction: opts.direction } : {}),
+          ...(opts.replicationRun !== undefined ? { replication_run_id: opts.replicationRun } : {}),
+          ...(opts.note !== undefined ? { note: opts.note } : {}),
+        };
+        const filed = await challenge(parseChallengeTarget(target), {
+          home: homeOf(),
+          grounds: opts.grounds,
+          statement,
+        });
+        err(
+          `challenge filed: ${filed.status}, grounds ${filed.grounds}, target ${filed.target.kind}; ` +
+            'the operator resolves it; a resolution moves the evidence revision and receipts issued earlier read stale',
+        );
+        out(filed.challenge_id);
+      } catch (e) {
+        fail(e);
+      }
+    },
+  );
+
+program
+  .command('predict')
+  .description(
+    'register a prediction BEFORE acting on a released answer; prints the prediction id for iwik outcome',
+  )
+  .requiredOption('--receipt <id>', 'the receipt the prediction is based on')
+  .requiredOption(
+    '--target <spec>',
+    'what is predicted: <claim>[.<metric>[.<statistic>]] (pack vocabulary)',
+  )
+  .requiredOption('--horizon <date>', 'by when it is observable (YYYY-MM-DD)')
+  .requiredOption(
+    '--rule <code>',
+    `evaluation rule: ${EVALUATION_RULES.join(' | ')}`,
+    evaluationRule,
+  )
+  .option('--probability <p>', 'your probability in [0, 1]', finiteNumber('probability'))
+  .option('--below <n>', 'the target stays below this value', finiteNumber('below'))
+  .option('--above <n>', 'the target stays above this value', finiteNumber('above'))
+  .option('--within <n>', 'the target stays within this value', finiteNumber('within'))
+  .option('--unit <u>', 'unit of the threshold (ms, %, ...)')
+  .action(
+    async (opts: {
+      receipt: string;
+      target: string;
+      horizon: string;
+      rule: EvaluationRule;
+      probability?: number;
+      below?: number;
+      above?: number;
+      within?: number;
+      unit?: string;
+    }) => {
+      try {
+        const target = parsePredictionTarget(opts.target, {
+          ...(opts.below !== undefined ? { below: opts.below } : {}),
+          ...(opts.above !== undefined ? { above: opts.above } : {}),
+          ...(opts.within !== undefined ? { within: opts.within } : {}),
+          ...(opts.unit !== undefined ? { unit: opts.unit } : {}),
+        });
+        const registered = await predict({
+          home: homeOf(),
+          receiptId: opts.receipt,
+          target,
+          horizon: opts.horizon,
+          ...(opts.probability !== undefined ? { probability: opts.probability } : {}),
+          evaluationRule: opts.rule,
+        });
+        err(
+          `prediction registered at ${registered.registered_at}: ${opts.target}, horizon ${registered.horizon}, rule ${registered.evaluation_rule}; ` +
+            'it cannot be changed; report the outcome later with iwik outcome <prediction id>',
+        );
+        out(registered.prediction_id);
+      } catch (e) {
+        fail(e);
+      }
+    },
+  );
+
+program
+  .command('outcome <prediction_id>')
+  .description(
+    'report the observed outcome of a registered prediction (exactly once); prints the outcome id',
+  )
+  .requiredOption('--result <code>', `result: ${OUTCOME_RESULTS.join(' | ')}`, outcomeResult)
+  .option(
+    '--environment-changed',
+    'the environment changed since the prediction (recorded separately from the result)',
+    false,
+  )
+  .option('--observed-at <timestamp>', 'when it was observed (RFC 3339; default now)')
+  .option(
+    '--receipt <id>',
+    'the receipt the prediction was based on (checked against the registration)',
+  )
+  .option('--evaluation-run <run_id>', 'one of YOUR runs that evaluated the prediction')
+  .action(
+    async (
+      predictionId: string,
+      opts: {
+        result: OutcomeResult;
+        environmentChanged: boolean;
+        observedAt?: string;
+        receipt?: string;
+        evaluationRun?: string;
+      },
+    ) => {
+      try {
+        const recorded = await outcome(predictionId, {
+          home: homeOf(),
+          result: opts.result,
+          environmentChanged: opts.environmentChanged,
+          ...(opts.observedAt !== undefined ? { observedAt: opts.observedAt } : {}),
+          ...(opts.receipt !== undefined ? { receiptId: opts.receipt } : {}),
+          ...(opts.evaluationRun !== undefined ? { evaluationRunId: opts.evaluationRun } : {}),
+        });
+        err(
+          `outcome recorded: ${recorded.observed.result}` +
+            (recorded.observed.environment_changed ? ' (environment changed)' : '') +
+            `; prediction registered ${recorded.prediction.registered_at} is unchanged`,
+        );
+        out(recorded.outcome_id);
+      } catch (e) {
+        fail(e);
+      }
+    },
+  );
 
 program
   .command('vault')

@@ -28,6 +28,7 @@ test('SKILL.md covers when to query, how to read an answer, when to propose a te
     '## When to query',
     '## How to read a released answer',
     '## When to propose a test',
+    '## When to challenge and how to register a prediction',
     '## How to explain a suppressed or insufficient answer',
     '## Never send',
   ]) {
@@ -56,5 +57,22 @@ test('SKILL.md covers when to query, how to read an answer, when to propose a te
   }
   assert.ok(/Local evidence only/.test(text));
   assert.ok(/insufficient_evidence/.test(text));
-  assert.ok(/not_yet_available/.test(text));
+  // stage 10: the ledger tools are real; the skill says to predict BEFORE acting
+  assert.ok(!/not_yet_available/.test(text));
+  const ledger = text.slice(
+    text.indexOf('## When to challenge and how to register a prediction'),
+    text.indexOf('## How to explain a suppressed or insufficient answer'),
+  );
+  for (const term of [
+    'register_prediction',
+    'BEFORE acting',
+    'report_outcome',
+    'environment_changed',
+    'challenge_finding',
+    'replication_failed',
+    'five per organization per day',
+    'IWIK_FEATURE_CHALLENGE',
+  ]) {
+    assert.ok(ledger.includes(term), `ledger section must mention ${term}`);
+  }
 });

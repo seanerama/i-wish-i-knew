@@ -36,6 +36,23 @@ export {
 export type { CooperativeQueryOptions } from './cooperative.js';
 export type { WithdrawOptions, WithdrawResult, WithdrawalReasonCode } from './withdraw.js';
 export {
+  challenge,
+  predict,
+  outcome,
+  parseChallengeTarget,
+  parsePredictionTarget,
+  checkStatement,
+  isChallengeGrounds,
+  isEvaluationRule,
+  isOutcomeResult,
+  CHALLENGE_GROUNDS,
+  CHALLENGE_DIRECTIONS,
+  CHALLENGE_NOTE_MAX_LENGTH,
+  EVALUATION_RULES,
+  OUTCOME_RESULTS,
+} from './ledger.js';
+export type { ChallengeOptions, PredictOptions, OutcomeOptions } from './ledger.js';
+export {
   init,
   discoverNode,
   resolveHome,
