@@ -64,3 +64,7 @@ the TypeScript types that consume them.
   `protocol_digest` member removed; tree digests hash `<path>\t<sha256>\n`
   lines over the sorted file list. The reference implementation is shared code
   in `packages/contracts`.
+- Detail `path` values are JSON Pointers, except `required_context_missing`,
+  which uses the pseudo-pointer `/context/<key>` (blessed 2026-09-06 after the
+  stage 2 review; consumers must not assume every path resolves against the
+  submitted document).

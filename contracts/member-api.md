@@ -69,6 +69,28 @@ the repeated-query defense (ADR-0002).
 
 **Pagination:** cursor-based, `?cursor=&limit=`; `limit ≤ 100`.
 
+## Wire details (additive, recorded 2026-09-06 from the stage 2 implementation)
+
+These are the concrete body shapes the service accepts. They are additive to
+the endpoint table above and do not change any listed semantics.
+
+- `POST /v1/contributions/preview` body: `{ "run": <Run> }`.
+- `POST /v1/runs` body: `{ "preview_id": "<ulid>", "run": <Run> }`.
+- **Signing payload** for `Run.submission.signature`: the JCS canonical form of
+  the `Run` object with `submission.signature` removed and with no `org_ref`
+  member (the node never sends `org_ref`; intake assigns it). The content
+  digest bound to a preview is SHA-256 over the same payload.
+- Previews expire after 1 hour and are not consumed; a retry with the same
+  `preview_id` and identical content returns `200`; an expired preview returns
+  `409 preview_expired`.
+- Intake additionally requires: `protocol_digest`, `harness_digest`, and
+  `result_schema_digest` match the registry; the protocol status is
+  `accepted`; `node_id` equals the token's node; a wire `org_ref` is rejected
+  with rule `server_assigned`.
+- Validation detail paths are JSON Pointers, with one documented exception:
+  `required_context_missing` uses the pseudo-pointer `/context/<key>` naming the
+  registry key, because context is an array.
+
 ## Versioning
 
 Frozen at **v1**. Changes are **additive only** — a breaking change is a NEW
