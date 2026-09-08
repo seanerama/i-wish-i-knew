@@ -1,0 +1,38 @@
+# Staging worker for the existing durable job loop (ADR-0001, ADR-0004).
+# Shares the API's image pin and environment. No HTTP listener or extra scheduler.
+[Unit]
+Description=I Wish I Knew cooperative worker
+Documentation=https://github.com/seanerama/i-wish-i-knew/blob/main/deploy/staging/README.md
+After=docker.service network-online.target
+Requires=docker.service
+Wants=network-online.target
+StartLimitIntervalSec=300
+StartLimitBurst=5
+
+[Service]
+Type=simple
+EnvironmentFile=/etc/i-wish-i-knew/env
+Restart=on-failure
+RestartSec=5s
+TimeoutStartSec=180s
+TimeoutStopSec=30s
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=i-wish-i-knew-worker
+ExecStartPre=-/usr/bin/docker rm -f i-wish-i-knew-worker
+ExecStartPre=-/usr/bin/docker pull ghcr.io/seanerama/i-wish-i-knew:${IWIK_IMAGE_TAG}
+ExecStart=/usr/bin/docker run --rm --name i-wish-i-knew-worker \
+    --network host \
+    --env-file /etc/i-wish-i-knew/env \
+    --log-driver none \
+    --init \
+    --read-only --tmpfs /tmp \
+    --no-healthcheck \
+    ghcr.io/seanerama/i-wish-i-knew:${IWIK_IMAGE_TAG} \
+    node packages/service/dist/worker.js
+# SIGTERM finishes the job in flight; Docker grants 20 s before forced stop.
+# Interrupted jobs are recovered by the existing stale-lock mechanism.
+ExecStop=/usr/bin/docker stop -t 20 i-wish-i-knew-worker
+
+[Install]
+WantedBy=multi-user.target
