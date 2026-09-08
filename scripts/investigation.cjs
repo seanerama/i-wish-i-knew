@@ -360,6 +360,7 @@ async function action(state, name, argument, save) {
     need(
       Number.isInteger(c.budget?.max_runs) &&
         c.budget.max_runs >= 7 &&
+        c.budget.max_runs <= 100 &&
         Number.isInteger(c.budget.max_requests) &&
         c.budget.max_requests >= c.planned * 7,
     );

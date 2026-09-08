@@ -3,12 +3,12 @@
 // helper setup in the disposable PostgreSQL; never relabel runner measurements.
 import assert from 'node:assert/strict';
 import { createRequire } from 'node:module';
-import { mkdtempSync, readFileSync, writeFileSync, rmSync, statSync } from 'node:fs';
+import { mkdtempSync, readFileSync, writeFileSync, rmSync, statSync, readdirSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { after, before, test } from 'node:test';
 import { spawn } from 'node:child_process';
-import { init as runnerInit, loadKey, homePaths, savePolicy } from '@iwik/runner';
+import { init as runnerInit, loadKey, homePaths, savePolicy, queryCooperative } from '@iwik/runner';
 import { createOrganization, createNode, issueToken } from '../src/modules/identity/index.js';
 import {
   bootCooperativeApp,
@@ -356,4 +356,86 @@ test('scenario: synthetic six-run release joins actual CLI/MCP/console, predicti
       assert.ok(!report.includes(secret));
   assert.ok(!report.includes(released.receipt_id));
   assert.match(report, /INCOMPLETE live acceptance/);
+});
+
+test('scenario: cycle budget boundary accepts 100 and rejects 101 before work; 100 own records clean up idempotently', async () => {
+  // Fresh identity keeps this boundary isolated from the earlier scenario's
+  // own-evidence history. Helper intake below is explicitly synthetic setup;
+  // no inference calls or runner measurements are needed to fill the boundary.
+  const serviceUrl = json(homePaths(homes.A!).config).service_url;
+  const home = join(base, 'boundary-home');
+  runnerInit({ home, serviceUrl });
+  const key = loadKey(homePaths(home).key);
+  const org = await createOrganization(t.app.iwik.pool, 'Synthetic boundary organization');
+  const node_id = await createNode(t.app.iwik.pool, org.org_id, key.pubkey);
+  const token = await issueToken(t.app.iwik.pool, node_id, ['query', 'submit', 'publish']);
+  const tokenFile = join(base, 'boundary.token');
+  writeFileSync(tokenFile, token, { mode: 0o600 });
+  runnerInit({ home, serviceUrl, tokenFile, nodeId: node_id });
+  savePolicy(home, {
+    allow_execution: true,
+    allowed_targets: [`127.0.0.1:${stub.port}`],
+    budget_per_plan_usd: 0,
+    allow_disruptive: false,
+  });
+  const config = json(join(scenario, 'scenario.json'));
+  config.homes.A = home;
+  config.budget.max_runs = 100;
+  config.budget.max_requests = config.planned * 100;
+  const configFile = join(base, 'boundary-config.json');
+  save(configFile, config);
+  const accepted = driver.init(join(base, 'boundary-100'), configFile);
+  await driver.execute(accepted, 'preflight');
+
+  config.budget.max_runs = 101;
+  config.budget.max_requests = config.planned * 101;
+  save(configFile, config);
+  const rejected = driver.init(join(base, 'boundary-101'), configFile);
+  const before = await t.app.iwik.pool.query('SELECT count(*)::int AS n FROM evidence.runs');
+  await assert.rejects(driver.execute(rejected, 'preflight'), /prerequisite_missing/);
+  await assert.rejects(driver.execute(rejected, 'run-A1'), /prerequisite_missing/);
+  await assert.rejects(driver.execute(rejected, 'approve-A1', '--approve'), /prerequisite_missing/);
+  assert.deepEqual(json(join(rejected, 'journal.json')).reservations, {});
+  assert.deepEqual(readdirSync(homePaths(home).vault), []);
+  const after = await t.app.iwik.pool.query('SELECT count(*)::int AS n FROM evidence.runs');
+  assert.equal(after.rows[0].n, before.rows[0].n);
+
+  const journalFile = join(accepted, 'journal.json');
+  const journal = json(journalFile);
+  const ids: string[] = [];
+  for (let i = 1; i <= 100; i++) {
+    const { res, run } = await submitFresh(
+      t,
+      { node_id, token, key: { privateKey: key.privateKey, pubkey: key.pubkey } },
+      seededRun({ region: 'local', ttft_p50: i, target_kind: 'fixture' }),
+    );
+    assert.equal(res.statusCode, 201);
+    assert.equal(res.json().sharing_policy, 'private');
+    ids.push(run.run_id);
+    journal.steps[`approve-A${i}`] = {
+      status: 'pass',
+      data: { receipt: res.json(), qualifying: false },
+      synthetic_test_setup: true,
+    };
+  }
+  save(journalFile, journal);
+  const own = await queryCooperative({
+    home,
+    protocol: 'inference-api/latency@1',
+    context: { client_region: 'local' },
+  });
+  assert.equal(own.result?.own_evidence?.runs.length, 100);
+  assert.notEqual(own.status, 'released');
+  const cleanup = await driver.execute(accepted, 'cleanup');
+  assert.equal(cleanup.withdrawals.length, 1);
+  assert.equal(cleanup.withdrawals[0].status, 201);
+  assert.equal(cleanup.withdrawals[0].run_ids.length, 100);
+  const persisted = await t.app.iwik.pool.query(
+    'SELECT count(*)::int AS n, count(withdrawn_at)::int AS withdrawn FROM evidence.runs WHERE run_id = ANY($1::text[])',
+    [ids],
+  );
+  assert.deepEqual(persisted.rows[0], { n: 100, withdrawn: 100 });
+  const replay = await driver.execute(accepted, 'cleanup');
+  assert.equal(replay.withdrawals[0].status, 200);
+  assert.equal(replay.withdrawals[0].withdrawal_id, cleanup.withdrawals[0].withdrawal_id);
 });

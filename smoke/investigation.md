@@ -79,10 +79,16 @@ node. `commit` is `git rev-parse HEAD` for the reviewed tooling; `deployed_commi
 is the verified stage 13 source. Set three absolute home paths and
 `runtime_evidence_file`. Set actual per-million prompt and completion token USD
 prices, including explicit zero only for a genuinely unbilled service. Set
-positive `max_runs` (at least 7), `max_requests` (at least 7 × planned),
+`max_runs` from 7 through 100 inclusive, `max_requests` (at least 7 × planned),
 `max_usd`, and `max_elapsed_ms` (including human approval pauses). At least ten
 successful attempts are needed for each latency run. Twelve planned requests
 is a starting workload, not a guaranteed qualifying run.
+
+The 100-run cap applies to the entire cycle across all three organizations,
+including additional attempts and the follow-up. It keeps every organization
+within the existing 100-ID withdrawal request and 100-entry own-evidence
+limits. Preflight rejects a larger budget before measurement or submission;
+use fresh demo identities for a separately authorized cycle, not a larger cap.
 
 Each execution reserves its entire request count and estimated cost before
 starting. Estimate = planned × (64 × prompt price + max_tokens × completion
@@ -395,6 +401,7 @@ Existing CI gate and security/build jobs must be green before merge.
 
 | Named coverage (exact test-name prefix) | File | Provenance / assertion |
 | --- | --- | --- |
+| `scenario: cycle budget boundary` | `investigation.test.ts` | 100-run budget accepted, 101 rejected before execution/submission; 100 isolated synthetic fixture records remain private, visible as own evidence, and clean up idempotently through the real service. |
 | `scenario: incomplete live preflight` | `investigation.test.ts` | Real local service; missing prerequisites and CLI failure exit nonzero, no public canary leakage. |
 | `scenario: real runner fixture` | `investigation.test.ts` | Actual plan/run/report/preview/approve to loopback stub; fixture private, resume/idempotency. |
 | `scenario: interrupted execution/prediction/outcome` | `investigation.test.ts` | Private pending-intent/lock regression; no second write or lost reservation. |
