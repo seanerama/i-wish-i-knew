@@ -16,34 +16,42 @@ on the deployment, `IWIK_OPERATOR_TOKEN` set, **three** enrolled organizations
 (`$TOKEN_A`, `$TOKEN_B`, `$TOKEN_C`) and a runner home initialized for each
 (`iwik --home $HOME_A init --service <base url> --token-file <file>` and so
 on). Use throwaway homes and `alias iwik='node packages/runner/bin/iwik.cjs'`.
-Run the stub target from `smoke/mcp.md` step 1 on `127.0.0.1:8089`.
+For released-answer checks, use an operator-controlled, compatible non-fixture
+inference service, non-sensitive inputs, accurate model/region context, explicit
+prices and an authorized bounded cost/time/request budget. Set `ACTUAL_REGION`
+to the actual runner region before using the shell examples. Follow
+[the stage 14 investigation](investigation.md) for exact preparation, runner
+planning, approval and recovery. Without that endpoint and budget, release
+verification is incomplete.
 
-A run against the stub with `--target-kind fixture` is never releasable
-(ADR-0003), so every contribution below uses `--target-kind service` and
-`--share cooperative`; the stub is the endpoint under test.
+The stub from `smoke/mcp.md` always uses `--target-kind fixture` and remains
+private/non-releasable (ADR-0003). Never relabel it as a service. CI release and
+contradiction checks use explicitly synthetic helper records only in disposable
+test databases; those are not staging measurements.
 
 ## Steps
 
 1. With `IWIK_FEATURE_COOPERATIVE_QUERY` unset (the default), open `/`.
    - Expect **Cooperative query** to read
      `disabled (IWIK_FEATURE_COOPERATIVE_QUERY=off)`.
-2. `iwik --home $HOME_A report --cooperative --protocol inference-api/latency@1 --context client_region=smoke`
+2. `iwik --home $HOME_A report --cooperative --protocol inference-api/latency@1 --context "client_region=$ACTUAL_REGION"`
    - Expect exit 0, stderr `insufficient_evidence: no_cooperative_evidence (receipt <id>)`,
      and stdout starting `# Cooperative evidence: insufficient_evidence` with
      the `Why nothing cooperative was released` section and
      `_Your organization has no runs for this protocol._`. This is the stage 5
      stub answer: the flag is off.
 3. Contribute two runs from each organization (six in all), each as a
-   service target with cooperative sharing and the same region:
-   `iwik --home $HOME_A run --protocol inference-api/latency@1 --target http://127.0.0.1:8089 --target-kind service --share cooperative --context model.requested=stub-model --context concurrency=1 --context cache_disabled=true --context client_region=smoke --planned 12`
+   service target with cooperative sharing and the same accurate region:
+   `iwik --home $HOME_A run --plan <reviewed real-service plan_id>` (the stage 14 procedure records explicit target, accurate context and approved prices/budget)
    then `iwik --home $HOME_A preview <run_id> --share cooperative && iwik --home $HOME_A submit <run_id>`;
    repeat once more for A and twice each for B and C. Note one of A's run ids (R_A).
    - Expect every receipt to read `"status": "accepted"` and
-     `"sharing_policy": "cooperative"`. (Two runs with identical results would
-     be a duplicate; the stub's timings differ per run, so they are not.)
+     `"sharing_policy": "cooperative"`. (Identical measurements can be duplicates; inspect actual eligibility and
+     dedupe receipts. Additional genuine attempts require remaining authorized
+     budget; never edit results or assume timing jitter guarantees distinctness.)
 4. Set `IWIK_FEATURE_COOPERATIVE_QUERY=on` on the deployment and restart it.
    - Expect `/` to show **Cooperative query** `enabled`.
-5. `iwik --home $HOME_A report --cooperative --protocol inference-api/latency@1 --context client_region=smoke`
+5. `iwik --home $HOME_A report --cooperative --protocol inference-api/latency@1 --context "client_region=$ACTUAL_REGION"`
    - Expect stdout starting `# Cooperative evidence: released`, `Cohort: 3-5
      organizations, 5-10 runs`, sections **Findings**, **Applicability**
      (`client_region` applied; the other five required keys listed as not
@@ -78,7 +86,7 @@ A run against the stub with `--target-kind fixture` is never releasable
    - Expect `suppressed` with `differencing` and cohort `3-5` / `5-10`: the
      cohort would differ from the prior release by one organization. The MCP
      tool says the same: `IWIK_MCP_ENABLED=on iwik --home $HOME_A mcp` and
-     call `query_evidence` with `{"protocol_ref":"inference-api/latency@1","context_filters":{"client_region":"smoke"}}`;
+     call `query_evidence` with `{"protocol_ref":"inference-api/latency@1","context_filters":{"client_region":"<actual-region>"}}`;
      expect `ok: false`, `code: "suppressed"`, a message with `differencing`,
      and a `next_step` that says not to narrow further.
 9. Withdraw R_A: `iwik --home $HOME_A withdraw R_A --reason data_error`, then
