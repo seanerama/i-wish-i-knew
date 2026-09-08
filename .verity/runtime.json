@@ -31,8 +31,8 @@
       "host": "127.0.0.1",
       "trust_proxy": 1,
       "worker_probe_id": "01M20XRWG36BRR5M64037RB8BB",
-      "api_container_id": "75ba6137035c18b72a4ddd2990697bf85d43b961971b5d2795cbe63d61fb13c8",
-      "worker_container_id": "47398ee069d487590c2ffea28d083be8457d0095547a1fab6dca3fd538e208b7"
+      "worker_container_id": "47398ee069d487590c2ffea28d083be8457d0095547a1fab6dca3fd538e208b7",
+      "service_container_id": "75ba6137035c18b72a4ddd2990697bf85d43b961971b5d2795cbe63d61fb13c8"
     },
     "production": {
       "status": "not_provisioned",

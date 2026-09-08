@@ -1,0 +1,6 @@
+# Docker container ID 75ba6137035c18b72a4ddd2990697bf85d43b961971b5d2795cbe63d61fb13c8.
+# Verified by docker inspect during stage 13. The old api_container_id field
+# triggered generic-api-key in the generated status and its JSON source.
+# Ignore these exact historical findings only; no rule or path is disabled.
+35e7940bbe5ff05296b2e1545e5509c03bc94ae6:STATUS.md:generic-api-key:11
+35e7940bbe5ff05296b2e1545e5509c03bc94ae6:.verity/runtime.json:generic-api-key:34
