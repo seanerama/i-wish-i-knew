@@ -12,3 +12,5 @@ dist/
 .verity/deploy-access.md
 # WSL/Windows download-metadata sidecars
 *:Zone.Identifier
+# Optional repo-local stage 14 execution artifacts; prefer an external private directory.
+.investigation/

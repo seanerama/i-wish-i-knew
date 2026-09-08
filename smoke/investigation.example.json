@@ -1,0 +1,47 @@
+{
+  "mode": "live",
+  "commit": "REPLACE_WITH_REVIEWED_STAGE14_TOOLING_COMMIT",
+  "deployed_commit": "ca5b9e3880898e14c14abee24061887411cb7079",
+  "image": "ghcr.io/seanerama/i-wish-i-knew:v0.1.1@sha256:4ef16ae532fae25d5b42ba34a64f3b389ec5be7b39be289021cabe3ff0d05509",
+  "service_url": "https://3090-tuf.taile0ffc4.ts.net:8443",
+  "runtime_evidence_file": null,
+  "homes": { "A": null, "B": null, "C": null },
+  "question": "REPLACE: specific latency or error-budget question under the actual workload",
+  "target": { "kind": "service", "url": null },
+  "context": {
+    "model.requested": null,
+    "concurrency": 1,
+    "cache_disabled": true,
+    "client_region": null
+  },
+  "filters": { "client_region": null },
+  "planned": 12,
+  "max_tokens": 64,
+  "timeout_ms": 30000,
+  "api_key_env": null,
+  "prices": {
+    "usd_per_1m_prompt_tokens": null,
+    "usd_per_1m_completion_tokens": null
+  },
+  "budget": {
+    "max_runs": null,
+    "max_requests": null,
+    "max_usd": null,
+    "max_elapsed_ms": null
+  },
+  "prediction": {
+    "metric": "ttft_ms",
+    "statistic": "p50",
+    "comparator": "below",
+    "value": null,
+    "horizon": null
+  },
+  "attestations": {
+    "non_fixture_service": false,
+    "operator_controlled": false,
+    "non_sensitive_inputs": false,
+    "accurate_context": false,
+    "isolated_demo_data": false,
+    "stage13_image_verified": false
+  }
+}
