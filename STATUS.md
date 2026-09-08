@@ -1,45 +1,26 @@
-# I Wish I Knew — Status & Handoff
+# Status & Handoff
 
-> Runtime/ops truth (framework-spec §4.6). Owned by the **Release/Deploy Operator**,
-> updated on every deploy. Records secret **locations** only — never values.
+> Runtime/ops truth (framework-spec §4.6). Generated from `.verity/runtime.json`
+> by the Release/Deploy Operator. Secret LOCATIONS only — never values.
 
-**As of:** not yet deployed
-
-## TL;DR
-
-Scaffolded by Verity. Release pipeline and host artifacts exist (stage 4);
-nothing deployed yet.
+**Live version:** v0.1.1 (staging only; acceptance incomplete)
+**Deployed at:** 2026-09-08T15:59:01Z
+**Rollback from:** v0.1.0@sha256:046dcc82900e9451f6fdeb940143a44a0c0ab4e6b7aab8bbd0091c5d544bc78c (baseline verified; rollback drill pending)
 
 ## Environments
+- **staging:** {"status":"awaiting_https_configuration","checked_at":"2026-09-08T16:05:00.675Z","checked_commit":"ca5b9e3880898e14c14abee24061887411cb7079","worker_verified":true,"ui_smoke_verified":false,"configuration_snapshot":"/var/backups/iwik-ship.6tdXUl4s","version":"v0.1.1","digest":"sha256:4ef16ae532fae25d5b42ba34a64f3b389ec5be7b39be289021cabe3ff0d05509","rollback_verified":false,"url":"https://3090-tuf.taile0ffc4.ts.net:8443","image_id":"sha256:d5bedabea1795c5bbc421f253623641c64480472866144d7398d08a399e2834d","release_workflow":"https://github.com/seanerama/i-wish-i-knew/actions/runs/34247878164","flags":{"intake":"on","enrollment":"on","dedupe":"on","cooperative_query":"on","challenge":"on","withdrawal":"on"},"worker_interval_ms":5000,"log_level":"info","evidence":".verity/evidence/stage-13-staging-2026-09-08.json"}
+- **production:** {"status":"not_provisioned","access_verified":true,"promoted":false}
 
-Targets per ADR-0004. The Operator (`/verity:ship`) replaces every
-"not deployed" with the real tag, URL, and date on the first deploy and keeps
-the row current afterwards; host addresses and credentials are never written
-here (only secret *locations*).
-
-| Environment | Method | Image tag | URL | Last deploy | Runbook |
-|---|---|---|---|---|---|
-| staging | `nsaf-dev-server` — systemd unit `deploy/i-wish-i-knew.service`, per-app PostgreSQL on the host, tailnet-only | not deployed | not deployed | — | [`deploy/staging/README.md`](deploy/staging/README.md) |
-| production | `coolify` on `ec2-primary` — Docker-image application, Coolify PostgreSQL resource, Cloudflare-proxied domain | not deployed | not deployed | — | [`deploy/production/README.md`](deploy/production/README.md) |
-
-## Live deployment
-
-- (none)
-
-## Images
-
-- prefix: `ghcr.io/seanerama/i-wish-i-knew`
-- built by `.github/workflows/release.yml` on every `v*` tag: `linux/amd64` +
-  `linux/arm64`, tagged `<tag>` and `sha-<short>`
-- (no releases yet)
-
-## Secrets
-
-- (none configured) — when set, list NAMES + on-disk LOCATIONS only, never values.
-  Names each environment needs: `deploy/staging/env.example` (staging),
-  `deploy/production/README.md` §1.3 (production).
+## Secret locations (names + on-disk locations only, never values)
+- DATABASE_URL, IWIK_KEK, IWIK_OPERATOR_TOKEN @ staging:/etc/i-wish-i-knew/env (root-owned 0640)
+- Original prepared secrets @ staging:~/i-wish-i-knew/env; pre-bootstrap copy @ staging:~/i-wish-i-knew/ship-ca5b9e3/env.before-bootstrap
+- Pre-deployment configuration snapshot @ staging:/var/backups/iwik-ship.6tdXUl4s/env (root-private directory)
 
 ## Coordination notes
-
-- Deploy access (host, credential locations) is shared out-of-band; see
-  `.verity/deploy-access.README.md`.
+- Staging v0.1.1 is deployed with matching API/worker images. Main and Release CI passed; the release digest artifact matches both registry platforms. Three fresh worker probes completed with matching systemd worker journal events.
+- A preceding compatible green main commit was shipped as v0.1.0 through the same build/scan workflow and verified on staging before advancing to v0.1.1. Independent restart, paired rollback, and restoration checks remain pending.
+- Read-only console and health smoke passed on HTTP, but real browser enrollment exposed the Secure-cookie requirement in production mode. The full browser gate is NOT passed. Tailnet-only HTTPS Serve on port 8443 is reachable and preserves existing port-443 handlers.
+- Administrator must run staging:~/i-wish-i-knew/ship-ca5b9e3/enable-staging-https.sh to set HTTPS public URL, loopback bind, and one trusted proxy. Script syntax and transfer checksums verified. It backs up the environment before changing these settings. The scoped operator wrapper cannot edit them.
+- Scoped deployment actions use /usr/bin/sudo.ws: the default sudo-rs rejects the installed NOPASSWD rule. Secrets remain in the root-owned shared environment and private backups.
+- Stage 13 issue #25 remains open; stage 14 waits for completed live checks. No contributions or real-member evidence were submitted.
+- Production SSH and Coolify API access verified after refreshing the current EC2 address in the private access record. No iwik production resources exist and none were created. Production promotion requires confirmation after staging passes.

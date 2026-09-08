@@ -36,7 +36,7 @@ sudo systemctl show i-wish-i-knew i-wish-i-knew-worker \
 sudo docker inspect --format '{{.Name}} running={{.State.Running}} image={{.Config.Image}} image_id={{.Image}}' \
   i-wish-i-knew i-wish-i-knew-worker
 sudo -u postgres psql -X -d iwik -c 'SELECT name FROM public.pgmigrations ORDER BY name;'
-# Set the actual non-secret API origin from the access record (no trailing slash).
+# Local process probe only; browser smoke uses the HTTPS origin below.
 export IWIK_BASE_URL=http://127.0.0.1:3000
 curl --connect-timeout 2 --max-time 5 -fsS "$IWIK_BASE_URL/readyz"
 curl --connect-timeout 2 --max-time 5 -fsS "$IWIK_BASE_URL/healthz"
@@ -109,11 +109,11 @@ The image sets production mode; the example makes it explicit.
 | --- | --- |
 | `IWIK_IMAGE_TAG` | Managed by deploy script; immutable `tag@sha256:...`. Initial placeholder is not runnable. |
 | `NODE_ENV` | `production` on staging. |
-| `HOST`, `PORT` | Tailnet bind address, or `127.0.0.1` behind a local proxy; port 3000. Required by the unit probe. |
+| `HOST`, `PORT` | `127.0.0.1` behind the local HTTPS proxy; port 3000. Required by the unit probe. |
 | `DATABASE_URL` | Required per-app PostgreSQL connection string; percent-encode reserved password characters. |
 | `IWIK_KEK` | Required 32 random bytes, hex (64 characters) or base64. Replace the invalid example placeholder; loss makes envelopes unreadable. |
 | `IWIK_OPERATOR_TOKEN` | Empty disables operator auth; generated token of at least 16 characters enables bootstrap/challenge administration. It never grants member evidence access. |
-| `IWIK_PUBLIC_URL` | Browser-reachable http(s) origin without path; empty gives path-only invite URLs. |
+| `IWIK_PUBLIC_URL` | Browser-reachable HTTPS origin without path; empty gives path-only invite URLs. Remote HTTP cannot carry the production-mode Secure cookies. |
 | `IWIK_TRUST_PROXY` | 0 for direct tailnet, 1 only behind one trusted proxy. |
 | `IWIK_WORKER_INTERVAL_MS` | 5000; positive worker poll interval in milliseconds. |
 | `IWIK_SEED_ORG`, `IWIK_SEED_NODE_TOKEN`, `IWIK_SEED_NODE_PUBKEY`, `IWIK_SEED_NODE_ID` | Optional legacy seed. First three must be set together; token >=16 characters, Ed25519 key as single-line raw base64, optional ULID node ID. Leave empty for enrollment. |
@@ -121,6 +121,30 @@ The image sets production mode; the example makes it explicit.
 | `IWIK_QUERY_COHORT_CAP`, `IWIK_MAX_STRING_LENGTH` | 500 and 1024, positive integers. |
 | `IWIK_SECRET_PATTERNS` | Additional regex sources as a JSON array; default `[]`. |
 | `IWIK_PACKS_DIR`, `IWIK_LOG_LEVEL` | `/app/packs`, `info`; use info during the worker proof so completion events exist. |
+
+### HTTPS browser origin
+
+With `NODE_ENV=production`, session and CSRF cookies carry `Secure`. A successful
+HTTP health check or read-only console render does not prove enrollment or login
+works. Configure a tailnet-only HTTPS reverse proxy before the browser smoke;
+keep production mode and Secure cookies enabled.
+
+On a host with Tailscale HTTPS already enabled, inspect `tailscale serve status
+--json` and choose an unused HTTPS port. Preserve existing handlers and Funnel
+settings. For example, with port 8443 free:
+
+```sh
+tailscale serve --bg --https=8443 http://127.0.0.1:3000
+```
+
+Set `HOST=127.0.0.1`, `IWIK_TRUST_PROXY=1`, and `IWIK_PUBLIC_URL` to the exact
+HTTPS origin printed by Serve, including its port. Restart both units. Confirm
+the new origin is not in `AllowFunnel` and the backend is reachable only on
+loopback, so client-supplied proxy headers cannot bypass the trusted proxy.
+Record the origin in the private access file and Operator runtime record; use it
+as `IWIK_BASE_URL` for every browser check and `verity smoke run --base-url`.
+Check that generated invite URLs use that same origin and complete an actual
+form submission. Update `.verity/smoke.json` when the configured origin changes.
 
 ### Explicit controlled demo configuration
 

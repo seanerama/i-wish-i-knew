@@ -1,5 +1,28 @@
 # Changelog
 
+## 0.1.1
+
+### Other
+- [stage 13] Staging readiness for a cooperative investigation (#27)
+
+## 0.1.0
+
+### Other
+- Contracts: record ledger entities, challenge/outcome wire details, register_prediction additively (stage 10)
+- [stage 10] Challenge and outcome ledger (#24)
+- Contracts: record cooperative query wire details and receipt sections additively (stage 9)
+- [stage 9] Matching and privacy-safe aggregation: real evidence query (#23)
+- Contracts: record cohort preview endpoint and duplicate receipts additively (stage 8)
+- [stage 8] Intake dedupe, organization concentration accounting, and the plaintext index projection (#22)
+- Contracts: record withdrawal wire details additively (stage 7)
+- [stage 7] Withdrawal, revision-keyed stale receipts, and the preview-reaping worker job (#21)
+- Contracts: record operator re-invite endpoint additively (stage 11)
+- Stage 11: operator re-invite, console password reset, login hardening (#20)
+- [stage 12] Runtime image hardening: drop npm CLI, refresh base, Trivy gate (#19)
+- Plan: milestone 0.3 backlog, stages 7-12
+- Ship: staging deploy.sh and smoke flows for the console
+- Release 0.0.1: changelog
+
 ## 0.0.1
 
 ### Other

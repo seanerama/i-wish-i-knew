@@ -1,0 +1,226 @@
+{
+  "stage": 13,
+  "status": "incomplete",
+  "checked_at": "2026-09-08T16:07:18.068696+00:00",
+  "intended_commit": "ca5b9e3880898e14c14abee24061887411cb7079",
+  "releases": {
+    "v0.1.0": {
+      "commit": "190af1932a860e9800c29c34a448a916ca5c9616",
+      "workflow": "https://github.com/seanerama/i-wish-i-knew/actions/runs/34247851666",
+      "reference": "ghcr.io/seanerama/i-wish-i-knew:v0.1.0@sha256:046dcc82900e9451f6fdeb940143a44a0c0ab4e6b7aab8bbd0091c5d544bc78c",
+      "scan": "passed",
+      "platforms": [
+        "linux/amd64",
+        "linux/arm64"
+      ],
+      "registry_digest_matches_artifact": true
+    },
+    "v0.1.1": {
+      "commit": "ca5b9e3880898e14c14abee24061887411cb7079",
+      "workflow": "https://github.com/seanerama/i-wish-i-knew/actions/runs/34247878164",
+      "reference": "ghcr.io/seanerama/i-wish-i-knew:v0.1.1@sha256:4ef16ae532fae25d5b42ba34a64f3b389ec5be7b39be289021cabe3ff0d05509",
+      "scan": "passed",
+      "platforms": [
+        "linux/amd64",
+        "linux/arm64"
+      ],
+      "registry_digest_matches_artifact": true
+    }
+  },
+  "phases": [
+    {
+      "phase": "baseline-off",
+      "started_at": "2026-09-08T15:58:41Z",
+      "ended_at": "2026-09-08T15:59:10.396248+00:00",
+      "containers": [
+        {
+          "name": "/i-wish-i-knew",
+          "reference": "ghcr.io/seanerama/i-wish-i-knew:v0.1.0@sha256:046dcc82900e9451f6fdeb940143a44a0c0ab4e6b7aab8bbd0091c5d544bc78c",
+          "image_id": "sha256:c3baeb547ab6403500629687ff1b4940b97dbe3661b60106cab357766c112d00",
+          "container_id": "3b3d1765ef4766f189993ad35972d1bbe286e118077cc0b84ee76b295c2f4edc",
+          "started_at": "2026-09-08T15:58:18.063788929Z",
+          "running": true
+        },
+        {
+          "name": "/i-wish-i-knew-worker",
+          "reference": "ghcr.io/seanerama/i-wish-i-knew:v0.1.0@sha256:046dcc82900e9451f6fdeb940143a44a0c0ab4e6b7aab8bbd0091c5d544bc78c",
+          "image_id": "sha256:c3baeb547ab6403500629687ff1b4940b97dbe3661b60106cab357766c112d00",
+          "container_id": "a8ff83a7c4ed122ffd29382694d6592555f59e40ef9cebb9befe83458cccbdc1",
+          "started_at": "2026-09-08T15:58:20.45368482Z",
+          "running": true
+        }
+      ],
+      "health_verified": true,
+      "probe": {
+        "job_id": "01M20VWGERCWXHKHG6SXT9TQE1",
+        "kind": "reap_previews",
+        "state": "done",
+        "attempts": 1
+      },
+      "journal_completion": {
+        "level": 30,
+        "time": 1788883125797,
+        "service": "iwik-worker",
+        "job_id": "01M20VWGERCWXHKHG6SXT9TQE1",
+        "kind": "reap_previews",
+        "attempts": 1,
+        "reaped": 0,
+        "msg": "job done"
+      },
+      "migrations": [
+        "1757100000000_spine",
+        "1757200000000_enrollment",
+        "1757311000000_invite_kind",
+        "1757400000000_withdrawal",
+        "1757500000000_dedupe",
+        "1757600000000_query",
+        "1757700000000_challenge"
+      ]
+    },
+    {
+      "phase": "intended-off",
+      "started_at": "2026-09-08T15:59:01Z",
+      "ended_at": "2026-09-08T15:59:33.848335+00:00",
+      "containers": [
+        {
+          "name": "/i-wish-i-knew",
+          "reference": "ghcr.io/seanerama/i-wish-i-knew:v0.1.1@sha256:4ef16ae532fae25d5b42ba34a64f3b389ec5be7b39be289021cabe3ff0d05509",
+          "image_id": "sha256:d5bedabea1795c5bbc421f253623641c64480472866144d7398d08a399e2834d",
+          "container_id": "74bf37272588a89740cc6cf200ed950595840fec28053b391ce891c247fd0e91",
+          "started_at": "2026-09-08T15:58:56.523962335Z",
+          "running": true
+        },
+        {
+          "name": "/i-wish-i-knew-worker",
+          "reference": "ghcr.io/seanerama/i-wish-i-knew:v0.1.1@sha256:4ef16ae532fae25d5b42ba34a64f3b389ec5be7b39be289021cabe3ff0d05509",
+          "image_id": "sha256:d5bedabea1795c5bbc421f253623641c64480472866144d7398d08a399e2834d",
+          "container_id": "60539291a8025d4215f183c62533883f19bed85c95cd209b211cdd757b81128b",
+          "started_at": "2026-09-08T15:58:58.977070523Z",
+          "running": true
+        }
+      ],
+      "health_verified": true,
+      "probe": {
+        "job_id": "01M20VX465WK2YMZ4C8G1QH2HZ",
+        "kind": "reap_previews",
+        "state": "done",
+        "attempts": 1
+      },
+      "journal_completion": {
+        "level": 30,
+        "time": 1788883149309,
+        "service": "iwik-worker",
+        "job_id": "01M20VX465WK2YMZ4C8G1QH2HZ",
+        "kind": "reap_previews",
+        "attempts": 1,
+        "reaped": 0,
+        "msg": "job done"
+      },
+      "migrations": [
+        "1757100000000_spine",
+        "1757200000000_enrollment",
+        "1757311000000_invite_kind",
+        "1757400000000_withdrawal",
+        "1757500000000_dedupe",
+        "1757600000000_query",
+        "1757700000000_challenge"
+      ]
+    },
+    {
+      "phase": "intended-demo",
+      "started_at": "2026-09-08T16:01:31Z",
+      "ended_at": "2026-09-08T16:02:03.612036+00:00",
+      "containers": [
+        {
+          "name": "/i-wish-i-knew",
+          "reference": "ghcr.io/seanerama/i-wish-i-knew:v0.1.1@sha256:4ef16ae532fae25d5b42ba34a64f3b389ec5be7b39be289021cabe3ff0d05509",
+          "image_id": "sha256:d5bedabea1795c5bbc421f253623641c64480472866144d7398d08a399e2834d",
+          "container_id": "1a5c00550410b1e388cda84b265a4de2cf4a8a3e1bec888be25b4cc346583f7a",
+          "started_at": "2026-09-08T16:01:28.973768301Z",
+          "running": true
+        },
+        {
+          "name": "/i-wish-i-knew-worker",
+          "reference": "ghcr.io/seanerama/i-wish-i-knew:v0.1.1@sha256:4ef16ae532fae25d5b42ba34a64f3b389ec5be7b39be289021cabe3ff0d05509",
+          "image_id": "sha256:d5bedabea1795c5bbc421f253623641c64480472866144d7398d08a399e2834d",
+          "container_id": "8df858d9ff888bfeb4e143a215f889c8e35f60147cac9434f470e337aa910a76",
+          "started_at": "2026-09-08T16:01:28.972887288Z",
+          "running": true
+        }
+      ],
+      "health_verified": true,
+      "probe": {
+        "job_id": "01M20W1PR4Z2M6HRDY8JM13HTF",
+        "kind": "reap_previews",
+        "state": "done",
+        "attempts": 1
+      },
+      "journal_completion": {
+        "level": 30,
+        "time": 1788883299332,
+        "service": "iwik-worker",
+        "job_id": "01M20W1PR4Z2M6HRDY8JM13HTF",
+        "kind": "reap_previews",
+        "attempts": 1,
+        "reaped": 0,
+        "msg": "job done"
+      },
+      "migrations": [
+        "1757100000000_spine",
+        "1757200000000_enrollment",
+        "1757311000000_invite_kind",
+        "1757400000000_withdrawal",
+        "1757500000000_dedupe",
+        "1757600000000_query",
+        "1757700000000_challenge"
+      ]
+    }
+  ],
+  "browser": {
+    "default_off": {
+      "verified": true,
+      "mode": "off",
+      "checked_at": "2026-09-08T16:01:21.742Z",
+      "checks": [
+        "six feature states match off configuration",
+        "enrollment and challenge pages return 404 with flags off"
+      ]
+    },
+    "read_only_http_smoke": {
+      "gate": "passed",
+      "verified": true,
+      "reason": "all flows passed",
+      "flows": [
+        {
+          "name": "console renders identity, trust statement, and revision",
+          "passed": true
+        },
+        {
+          "name": "readiness reports database reachable and migrations current",
+          "passed": true
+        },
+        {
+          "name": "liveness works independently of the intake flag",
+          "passed": true
+        }
+      ],
+      "raw": "passed"
+    },
+    "enrollment": "failed on HTTP; production-mode Secure CSRF cookies require HTTPS",
+    "https_origin": "https://3090-tuf.taile0ffc4.ts.net:8443",
+    "https_origin_health": "passed with certificate verification",
+    "configuration_correction": "administrator action pending"
+  },
+  "pending": [
+    "Apply prepared HTTPS origin, loopback bind, and single trusted proxy configuration",
+    "Complete enabled browser enrollment, token lifecycle, and password reset checks",
+    "Independent API/worker restarts",
+    "Paired rollback to v0.1.0 and restoration to v0.1.1",
+    "Final HTTPS browser and worker proof"
+  ],
+  "limitations": [
+    "First installation had no usable previous image. A distinct compatible baseline release was built and scanned through Release before deploying the intended release.",
+    "No contribution was submitted; stage 14 investigation has not run.",
+    "Production resources do not yet exist; production has not been deployed."
+  ]
+}
