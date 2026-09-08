@@ -3,24 +3,25 @@
 > Runtime/ops truth (framework-spec §4.6). Generated from `.verity/runtime.json`
 > by the Release/Deploy Operator. Secret LOCATIONS only — never values.
 
-**Live version:** v0.1.1 (staging only; acceptance incomplete)
-**Deployed at:** 2026-09-08T15:59:01Z
-**Rollback from:** v0.1.0@sha256:046dcc82900e9451f6fdeb940143a44a0c0ab4e6b7aab8bbd0091c5d544bc78c (baseline verified; rollback drill pending)
+**Live version:** v0.1.1 (staging)
+**Deployed at:** 2026-09-08T16:31:34.606558888Z
+**Rollback from:** ghcr.io/seanerama/i-wish-i-knew:v0.1.0@sha256:046dcc82900e9451f6fdeb940143a44a0c0ab4e6b7aab8bbd0091c5d544bc78c
 
 ## Environments
-- **staging:** {"status":"awaiting_https_configuration","checked_at":"2026-09-08T16:05:00.675Z","checked_commit":"ca5b9e3880898e14c14abee24061887411cb7079","worker_verified":true,"ui_smoke_verified":false,"configuration_snapshot":"/var/backups/iwik-ship.6tdXUl4s","version":"v0.1.1","digest":"sha256:4ef16ae532fae25d5b42ba34a64f3b389ec5be7b39be289021cabe3ff0d05509","rollback_verified":false,"url":"https://3090-tuf.taile0ffc4.ts.net:8443","image_id":"sha256:d5bedabea1795c5bbc421f253623641c64480472866144d7398d08a399e2834d","release_workflow":"https://github.com/seanerama/i-wish-i-knew/actions/runs/34247878164","flags":{"intake":"on","enrollment":"on","dedupe":"on","cooperative_query":"on","challenge":"on","withdrawal":"on"},"worker_interval_ms":5000,"log_level":"info","evidence":".verity/evidence/stage-13-staging-2026-09-08.json"}
+- **staging:** {"status":"verified_stage_13","checked_at":"2026-09-08T16:33:29.312Z","checked_commit":"ca5b9e3880898e14c14abee24061887411cb7079","worker_verified":true,"ui_smoke_verified":true,"configuration_snapshot":"/var/backups/iwik-ship.6sMtKy1w","version":"v0.1.1","digest":"sha256:4ef16ae532fae25d5b42ba34a64f3b389ec5be7b39be289021cabe3ff0d05509","rollback_verified":true,"url":"https://3090-tuf.taile0ffc4.ts.net:8443","image_id":"sha256:d5bedabea1795c5bbc421f253623641c64480472866144d7398d08a399e2834d","release_workflow":"https://github.com/seanerama/i-wish-i-knew/actions/runs/34247878164","flags":{"intake":"on","enrollment":"on","dedupe":"on","cooperative_query":"on","challenge":"on","withdrawal":"on"},"worker_interval_ms":5000,"log_level":"info","evidence":".verity/evidence/stage-13-staging-2026-09-08.json","restarts_verified":true,"host":"127.0.0.1","trust_proxy":1,"worker_probe_id":"01M20XRWG36BRR5M64037RB8BB","api_container_id":"75ba6137035c18b72a4ddd2990697bf85d43b961971b5d2795cbe63d61fb13c8","worker_container_id":"47398ee069d487590c2ffea28d083be8457d0095547a1fab6dca3fd538e208b7"}
 - **production:** {"status":"not_provisioned","access_verified":true,"promoted":false}
 
 ## Secret locations (names + on-disk locations only, never values)
 - DATABASE_URL, IWIK_KEK, IWIK_OPERATOR_TOKEN @ staging:/etc/i-wish-i-knew/env (root-owned 0640)
 - Original prepared secrets @ staging:~/i-wish-i-knew/env; pre-bootstrap copy @ staging:~/i-wish-i-knew/ship-ca5b9e3/env.before-bootstrap
 - Pre-deployment configuration snapshot @ staging:/var/backups/iwik-ship.6tdXUl4s/env (root-private directory)
+- Post-HTTPS configuration snapshot @ staging:/var/backups/iwik-ship.6sMtKy1w/env (root-private directory)
+- Operator-only demo console credentials @ operator workstation:/home/smahoney/.local/state/iwik/stage-13/demo-private.json (0600; no real-member data)
 
 ## Coordination notes
-- Staging v0.1.1 is deployed with matching API/worker images. Main and Release CI passed; the release digest artifact matches both registry platforms. Three fresh worker probes completed with matching systemd worker journal events.
-- A preceding compatible green main commit was shipped as v0.1.0 through the same build/scan workflow and verified on staging before advancing to v0.1.1. Independent restart, paired rollback, and restoration checks remain pending.
-- Read-only console and health smoke passed on HTTP, but real browser enrollment exposed the Secure-cookie requirement in production mode. The full browser gate is NOT passed. Tailnet-only HTTPS Serve on port 8443 is reachable and preserves existing port-443 handlers.
-- Administrator must run staging:~/i-wish-i-knew/ship-ca5b9e3/enable-staging-https.sh to set HTTPS public URL, loopback bind, and one trusted proxy. Script syntax and transfer checksums verified. It backs up the environment before changing these settings. The scoped operator wrapper cannot edit them.
-- Scoped deployment actions use /usr/bin/sudo.ws: the default sudo-rs rejects the installed NOPASSWD rule. Secrets remain in the root-owned shared environment and private backups.
-- Stage 13 issue #25 remains open; stage 14 waits for completed live checks. No contributions or real-member evidence were submitted.
-- Production SSH and Coolify API access verified after refreshing the current EC2 address in the private access record. No iwik production resources exist and none were created. Production promotion requires confirmation after staging passes.
+- Stage 13 live staging checks passed. Both API and worker run the exact v0.1.1 Release artifact; both registry platforms and release scans were verified. Detailed sanitized evidence: .verity/evidence/stage-13-staging-2026-09-08.json.
+- Private HTTPS origin is active with a loopback backend and one trusted proxy. Browser checks passed for six flags off/on, enrollment agreements, one-time invitations and tokens, node/token revocation, intake fixture preview, challenge/member consoles, password reset, session invalidation and login rate limiting.
+- Independent API/worker restarts and deliberate paired rollback to v0.1.0 passed. Initial rapid restoration hit the five-starts-per-300-seconds limit and stopped both units. After the window expired, redeployment of v0.1.1 succeeded; final worker and existing browser identity checks passed. The smoke documents pacing, and crash-loop protection remains enabled.
+- Final controlled demo configuration has all six features on, info logging and a 5000 ms worker interval. Demo identities and private fixture previews remain; no contributions or real-member evidence were submitted. Stage 14 must use its own three demo identities and genuine non-fixture measurements under an explicit endpoint and cost budget.
+- Scoped deployment actions use /usr/bin/sudo.ws; default sudo-rs rejects the installed NOPASSWD rule. Credentials remain in the root-owned environment and private backup locations.
+- Stage 13 is ready for stage 14. Production resources do not yet exist; no production deployment or feature activation was performed.

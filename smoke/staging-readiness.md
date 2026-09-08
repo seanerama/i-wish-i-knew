@@ -104,6 +104,13 @@ process, old unrelated completed job, or HTTP readiness is insufficient proof.
 
 ## 4. Restarts, paired rollback, return to demo
 
+Both units allow five starts per 300 seconds, including deliberate restarts.
+Space the flag changes and restart/rollback checks so they do not exhaust that
+budget. Check `StartLimitIntervalUSec` and `StartLimitBurst` with `systemctl show`
+before a rapid drill. If the limit is reached, record the interruption and wait
+for the window to expire before retrying, or have an administrator reset the
+failed state after diagnosing it. Do not weaken crash-loop protection for smoke.
+
 - [ ] Restart API alone, rerun HTTP and paired image checks, and confirm the worker
       remains available. Restart worker alone; verify both image references and
       use a **fresh** probe plus journal completion to prove its new process works.

@@ -1,7 +1,7 @@
 {
   "stage": 13,
-  "status": "incomplete",
-  "checked_at": "2026-09-08T16:07:18.068696+00:00",
+  "status": "passed",
+  "checked_at": "2026-09-08T16:33:29.312Z",
   "intended_commit": "ca5b9e3880898e14c14abee24061887411cb7079",
   "releases": {
     "v0.1.0": {
@@ -174,19 +174,248 @@
         "1757600000000_query",
         "1757700000000_challenge"
       ]
+    },
+    {
+      "phase": "api-restart",
+      "started_at": "2026-09-08T16:28:19Z",
+      "ended_at": "2026-09-08T16:28:51.417924+00:00",
+      "containers": [
+        {
+          "name": "/i-wish-i-knew",
+          "reference": "ghcr.io/seanerama/i-wish-i-knew:v0.1.1@sha256:4ef16ae532fae25d5b42ba34a64f3b389ec5be7b39be289021cabe3ff0d05509",
+          "image_id": "sha256:d5bedabea1795c5bbc421f253623641c64480472866144d7398d08a399e2834d",
+          "container_id": "947461970e4606e26a952d077e8f65a29831a12ab07fd521a68c7b4313c0fa8b",
+          "started_at": "2026-09-08T16:28:16.243446584Z",
+          "running": true
+        },
+        {
+          "name": "/i-wish-i-knew-worker",
+          "reference": "ghcr.io/seanerama/i-wish-i-knew:v0.1.1@sha256:4ef16ae532fae25d5b42ba34a64f3b389ec5be7b39be289021cabe3ff0d05509",
+          "image_id": "sha256:d5bedabea1795c5bbc421f253623641c64480472866144d7398d08a399e2834d",
+          "container_id": "0f074cd8522a8670feacd02d05bab7b274fc08d7c8971b0424789ee331277515",
+          "started_at": "2026-09-08T16:28:11.853554154Z",
+          "running": true
+        }
+      ],
+      "health_verified": true,
+      "probe": {
+        "job_id": "01M20XJRNSHS3Z9P7JT3Z86CKV",
+        "kind": "reap_previews",
+        "state": "done",
+        "attempts": 1
+      },
+      "journal_completion": {
+        "level": 30,
+        "time": 1788884907209,
+        "service": "iwik-worker",
+        "job_id": "01M20XJRNSHS3Z9P7JT3Z86CKV",
+        "kind": "reap_previews",
+        "attempts": 1,
+        "reaped": 0,
+        "msg": "job done"
+      },
+      "migrations": [
+        "1757100000000_spine",
+        "1757200000000_enrollment",
+        "1757311000000_invite_kind",
+        "1757400000000_withdrawal",
+        "1757500000000_dedupe",
+        "1757600000000_query",
+        "1757700000000_challenge"
+      ]
+    },
+    {
+      "phase": "worker-restart",
+      "started_at": "2026-09-08T16:28:35Z",
+      "ended_at": "2026-09-08T16:29:04.801520+00:00",
+      "containers": [
+        {
+          "name": "/i-wish-i-knew",
+          "reference": "ghcr.io/seanerama/i-wish-i-knew:v0.1.1@sha256:4ef16ae532fae25d5b42ba34a64f3b389ec5be7b39be289021cabe3ff0d05509",
+          "image_id": "sha256:d5bedabea1795c5bbc421f253623641c64480472866144d7398d08a399e2834d",
+          "container_id": "947461970e4606e26a952d077e8f65a29831a12ab07fd521a68c7b4313c0fa8b",
+          "started_at": "2026-09-08T16:28:16.243446584Z",
+          "running": true
+        },
+        {
+          "name": "/i-wish-i-knew-worker",
+          "reference": "ghcr.io/seanerama/i-wish-i-knew:v0.1.1@sha256:4ef16ae532fae25d5b42ba34a64f3b389ec5be7b39be289021cabe3ff0d05509",
+          "image_id": "sha256:d5bedabea1795c5bbc421f253623641c64480472866144d7398d08a399e2834d",
+          "container_id": "de10d2e3032fbc0b361c8f99afa711aaf5731392f30c1505fec14163f407c9de",
+          "started_at": "2026-09-08T16:28:34.777359702Z",
+          "running": true
+        }
+      ],
+      "health_verified": true,
+      "probe": {
+        "job_id": "01M20XK8HFXSBKYXTE0WE8QZVF",
+        "kind": "reap_previews",
+        "state": "done",
+        "attempts": 1
+      },
+      "journal_completion": {
+        "level": 30,
+        "time": 1788884920111,
+        "service": "iwik-worker",
+        "job_id": "01M20XK8HFXSBKYXTE0WE8QZVF",
+        "kind": "reap_previews",
+        "attempts": 1,
+        "reaped": 0,
+        "msg": "job done"
+      },
+      "migrations": [
+        "1757100000000_spine",
+        "1757200000000_enrollment",
+        "1757311000000_invite_kind",
+        "1757400000000_withdrawal",
+        "1757500000000_dedupe",
+        "1757600000000_query",
+        "1757700000000_challenge"
+      ]
+    },
+    {
+      "phase": "rollback-demo",
+      "started_at": "2026-09-08T16:28:54Z",
+      "ended_at": "2026-09-08T16:29:25.833205+00:00",
+      "containers": [
+        {
+          "name": "/i-wish-i-knew",
+          "reference": "ghcr.io/seanerama/i-wish-i-knew:v0.1.0@sha256:046dcc82900e9451f6fdeb940143a44a0c0ab4e6b7aab8bbd0091c5d544bc78c",
+          "image_id": "sha256:c3baeb547ab6403500629687ff1b4940b97dbe3661b60106cab357766c112d00",
+          "container_id": "a4f414cbbaa66caaa101c5b1c15ed9a7fef4b9765223e5a8efe8799e3258f95d",
+          "started_at": "2026-09-08T16:28:48.641717061Z",
+          "running": true
+        },
+        {
+          "name": "/i-wish-i-knew-worker",
+          "reference": "ghcr.io/seanerama/i-wish-i-knew:v0.1.0@sha256:046dcc82900e9451f6fdeb940143a44a0c0ab4e6b7aab8bbd0091c5d544bc78c",
+          "image_id": "sha256:c3baeb547ab6403500629687ff1b4940b97dbe3661b60106cab357766c112d00",
+          "container_id": "0a1b617d7e74e21bcc32d93ce9f262800ebe9cbcb059a4106997ff0680b62a17",
+          "started_at": "2026-09-08T16:28:51.115200988Z",
+          "running": true
+        }
+      ],
+      "health_verified": true,
+      "probe": {
+        "job_id": "01M20XKV1AZ42PSEN969E6XQ16",
+        "kind": "reap_previews",
+        "state": "done",
+        "attempts": 1
+      },
+      "journal_completion": {
+        "level": 30,
+        "time": 1788884941453,
+        "service": "iwik-worker",
+        "job_id": "01M20XKV1AZ42PSEN969E6XQ16",
+        "kind": "reap_previews",
+        "attempts": 1,
+        "reaped": 0,
+        "msg": "job done"
+      },
+      "migrations": [
+        "1757100000000_spine",
+        "1757200000000_enrollment",
+        "1757311000000_invite_kind",
+        "1757400000000_withdrawal",
+        "1757500000000_dedupe",
+        "1757600000000_query",
+        "1757700000000_challenge"
+      ]
+    },
+    {
+      "phase": "restored-demo",
+      "started_at": "2026-09-08T16:31:40Z",
+      "ended_at": "2026-09-08T16:32:11.805604+00:00",
+      "containers": [
+        {
+          "name": "/i-wish-i-knew",
+          "reference": "ghcr.io/seanerama/i-wish-i-knew:v0.1.1@sha256:4ef16ae532fae25d5b42ba34a64f3b389ec5be7b39be289021cabe3ff0d05509",
+          "image_id": "sha256:d5bedabea1795c5bbc421f253623641c64480472866144d7398d08a399e2834d",
+          "container_id": "75ba6137035c18b72a4ddd2990697bf85d43b961971b5d2795cbe63d61fb13c8",
+          "started_at": "2026-09-08T16:31:34.606558888Z",
+          "running": true
+        },
+        {
+          "name": "/i-wish-i-knew-worker",
+          "reference": "ghcr.io/seanerama/i-wish-i-knew:v0.1.1@sha256:4ef16ae532fae25d5b42ba34a64f3b389ec5be7b39be289021cabe3ff0d05509",
+          "image_id": "sha256:d5bedabea1795c5bbc421f253623641c64480472866144d7398d08a399e2834d",
+          "container_id": "47398ee069d487590c2ffea28d083be8457d0095547a1fab6dca3fd538e208b7",
+          "started_at": "2026-09-08T16:31:37.026944818Z",
+          "running": true
+        }
+      ],
+      "health_verified": true,
+      "probe": {
+        "job_id": "01M20XRWG36BRR5M64037RB8BB",
+        "kind": "reap_previews",
+        "state": "done",
+        "attempts": 1
+      },
+      "journal_completion": {
+        "level": 30,
+        "time": 1788885107375,
+        "service": "iwik-worker",
+        "job_id": "01M20XRWG36BRR5M64037RB8BB",
+        "kind": "reap_previews",
+        "attempts": 1,
+        "reaped": 0,
+        "msg": "job done"
+      },
+      "migrations": [
+        "1757100000000_spine",
+        "1757200000000_enrollment",
+        "1757311000000_invite_kind",
+        "1757400000000_withdrawal",
+        "1757500000000_dedupe",
+        "1757600000000_query",
+        "1757700000000_challenge"
+      ]
     }
   ],
   "browser": {
     "default_off": {
       "verified": true,
       "mode": "off",
-      "checked_at": "2026-09-08T16:01:21.742Z",
+      "checked_at": "2026-09-08T16:28:29.451Z",
       "checks": [
         "six feature states match off configuration",
         "enrollment and challenge pages return 404 with flags off"
       ]
     },
-    "read_only_http_smoke": {
+    "enabled": {
+      "verified": true,
+      "mode": "demo",
+      "checked_at": "2026-09-08T16:27:51.994Z",
+      "checks": [
+        "six feature states match demo configuration",
+        "operator invitation creation, name collision, and authentication",
+        "agreement validation, browser enrollment, one-time invite",
+        "runner public key registration, invalid key rejection, one-time scoped token",
+        "intake preview accepts a clearly marked private fixture; no contribution submitted",
+        "member console, enabled challenge ledger, and empty withdrawal surface",
+        "token and node revocation deny subsequent API access",
+        "one-time password reset preserves nodes and active tokens and invalidates old sessions/password"
+      ]
+    },
+    "restored": {
+      "verified": true,
+      "mode": "restore",
+      "checked_at": "2026-09-08T16:32:13.484Z",
+      "checks": [
+        "six feature states match restore configuration",
+        "existing demo organization and nodes survive rollback and restoration"
+      ]
+    },
+    "rate_limit": {
+      "verified": true,
+      "checked_at": "2026-09-08T16:33:15.634Z",
+      "wrong_password_attempts": 5,
+      "sixth_status": 429,
+      "other_org_status": 429,
+      "retry_after_seconds": 59,
+      "login_after_window": true
+    },
+    "verity_smoke": {
       "gate": "passed",
       "verified": true,
       "reason": "all flows passed",
@@ -206,21 +435,56 @@
       ],
       "raw": "passed"
     },
-    "enrollment": "failed on HTTP; production-mode Secure CSRF cookies require HTTPS",
     "https_origin": "https://3090-tuf.taile0ffc4.ts.net:8443",
-    "https_origin_health": "passed with certificate verification",
-    "configuration_correction": "administrator action pending"
+    "certificate_verified": true
   },
-  "pending": [
-    "Apply prepared HTTPS origin, loopback bind, and single trusted proxy configuration",
-    "Complete enabled browser enrollment, token lifecycle, and password reset checks",
-    "Independent API/worker restarts",
-    "Paired rollback to v0.1.0 and restoration to v0.1.1",
-    "Final HTTPS browser and worker proof"
-  ],
+  "pending": [],
   "limitations": [
-    "First installation had no usable previous image. A distinct compatible baseline release was built and scanned through Release before deploying the intended release.",
-    "No contribution was submitted; stage 14 investigation has not run.",
-    "Production resources do not yet exist; production has not been deployed."
+    "Only operator-owned demo identities and a clearly marked private fixture preview were used. No contributions were submitted; the stage 14 investigation and genuine service measurements have not run.",
+    "This verifies a deliberate rollback between compatible pinned images. The initial rapid restoration interruption is retained above; automatic recovery was blocked by systemd until its rate-limit window expired.",
+    "Production has not been provisioned or promoted; production setup and confirmation remain separate."
+  ],
+  "configuration": {
+    "host": "127.0.0.1",
+    "port": 3000,
+    "public_url": "https://3090-tuf.taile0ffc4.ts.net:8443",
+    "trust_proxy": 1,
+    "node_env": "production",
+    "tailnet_only": true,
+    "funnel_on_8443": false,
+    "existing_443_handlers_preserved": true,
+    "flags": {
+      "intake": "on",
+      "enrollment": "on",
+      "dedupe": "on",
+      "cooperative_query": "on",
+      "challenge": "on",
+      "withdrawal": "on"
+    },
+    "worker_interval_ms": 5000,
+    "log_level": "info",
+    "configuration_snapshot": "/var/backups/iwik-ship.6sMtKy1w"
+  },
+  "restarts": {
+    "api_alone": "passed; worker identity and start time unchanged",
+    "worker_alone": "passed; new worker identity and fresh journal-matched completed job"
+  },
+  "rollback": {
+    "baseline": "v0.1.0",
+    "paired_rollback": "passed",
+    "restoration": "passed after start-limit window expired",
+    "restored_release": "v0.1.1",
+    "migration_names_unchanged": true
+  },
+  "resolved_findings": [
+    {
+      "finding": "HTTP origin did not support production Secure CSRF/session cookies",
+      "resolution": "Administrator configured private HTTPS origin, loopback backend bind and one trusted proxy; browser enrollment and password reset passed."
+    },
+    {
+      "finding": "Rapid smoke restarts exhausted systemd StartLimitBurst=5 within 300 seconds; initial restoration and automatic recovery could not start either unit.",
+      "observed_at": "2026-09-08T16:29:08Z",
+      "resolution": "Waited for the start-limit window to expire and redeployed the original v0.1.1 artifact successfully. Verified both running images, HTTP, a fresh worker completion and existing browser identity. Crash-loop protection remains unchanged; smoke now documents pacing."
+    }
   ]
 }
