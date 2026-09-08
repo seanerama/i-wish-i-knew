@@ -22,7 +22,7 @@
     "lint": "eslint . && prettier --check .",
     "format": "prettier --write .",
     "test": "npm run build:contracts && npm run build:runner && npm run test --workspaces --if-present && node --test \"packs/inference-api/test/*.test.js\" && npm run test:deploy",
-    "test:deploy": "sh deploy/test/unit-file.test.sh",
+    "test:deploy": "sh deploy/test/unit-file.test.sh && node --test deploy/test/*.test.cjs",
     "migrate": "npm run migrate -w @iwik/service",
     "dev": "npm run dev -w @iwik/service",
     "pack:digest": "node scripts/pack-digest.js"
